@@ -1,5 +1,5 @@
 [build]
-  base    = "."
+  base    = "allroads-to-ao3"
   command = "npm run build"
   publish = "dist"
 
