@@ -17,7 +17,7 @@ export default function App() {
     <BrowserRouter>
       <Decorations />
       <Routes>
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/gallery" element={<ProtectedRoute><GalleryPage /></ProtectedRoute>} />
         <Route path="/fic/:id" element={<ProtectedRoute><DetailPage /></ProtectedRoute>} />
