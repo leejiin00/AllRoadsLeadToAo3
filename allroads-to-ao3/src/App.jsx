@@ -9,6 +9,7 @@ import BookmarkDetailPage from './pages/BookmarkDetailPage'
 import WritingPage from './pages/WritingPage'
 import CharacterPage from './pages/CharacterPage'
 import StatsPage from './pages/StatsPage'
+import ProtectedRoute from './components/ProtectedRoute'
 import Decorations from './components/Decorations'
 
 export default function App() {
@@ -25,7 +26,7 @@ export default function App() {
         <Route path="/writing" element={<WritingPage />} />
         <Route path="/characters" element={<CharacterPage />} />
         <Route path="/stats" element={<StatsPage />} />
-        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )
