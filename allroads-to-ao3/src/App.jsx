@@ -18,14 +18,14 @@ export default function App() {
       <Decorations />
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/gallery" element={<GalleryPage />} />
-        <Route path="/fic/:id" element={<DetailPage />} />
-        <Route path="/bookmarks" element={<BookmarkPage />} />
-        <Route path="/bookmarks/:id" element={<BookmarkDetailPage />} />
-        <Route path="/writing" element={<WritingPage />} />
-        <Route path="/characters" element={<CharacterPage />} />
-        <Route path="/stats" element={<StatsPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/gallery" element={<ProtectedRoute><GalleryPage /></ProtectedRoute>} />
+        <Route path="/fic/:id" element={<ProtectedRoute><DetailPage /></ProtectedRoute>} />
+        <Route path="/bookmarks" element={<ProtectedRoute><BookmarkPage /></ProtectedRoute>} />
+        <Route path="/bookmarks/:id" element={<ProtectedRoute><BookmarkDetailPage /></ProtectedRoute>} />
+        <Route path="/writing" element={<ProtectedRoute><WritingPage /></ProtectedRoute>} />
+        <Route path="/characters" element={<ProtectedRoute><CharacterPage /></ProtectedRoute>} />
+        <Route path="/stats" element={<ProtectedRoute><StatsPage /></ProtectedRoute>} />
         <Route
           path="/admin"
           element={
