@@ -316,6 +316,11 @@ const EMPTY_FIC = {
   good_ending: false, bad_ending: false, content_rating: '',
 }
 
+function parseIntField(val) {
+  const cleaned = String(val ?? '').replace(/[\s,.]/g, '')
+  return parseInt(cleaned) || null
+}
+
 function buildPayload(fic) {
   return {
     work_name:     fic.work_name.trim()     || null,
@@ -327,11 +332,11 @@ function buildPayload(fic) {
     summary:       fic.summary.trim()       || null,
     my_review:     fic.my_review.trim()     || null,
     tags:          fic.tags.length ? fic.tags : null,
-    rank:          parseInt(fic.rank)       || null,
-    rating:        parseFloat(fic.rating)   || null,
-    word_count:    parseInt(fic.word_count) || null,
-    chapter_count: parseInt(fic.chapter_count) || null,
-    read_count:    parseInt(fic.read_count) || null,
+    rank:          parseIntField(fic.rank),
+    rating:        parseFloat(String(fic.rating).replace(',', '.')) || null,
+    word_count:    parseIntField(fic.word_count),
+    chapter_count: parseIntField(fic.chapter_count),
+    read_count:    parseIntField(fic.read_count),
     good_ending:   fic.good_ending,
     bad_ending:    fic.bad_ending,
     content_rating: fic.content_rating || null,
@@ -339,6 +344,7 @@ function buildPayload(fic) {
 }
 
 function field(state, setState, key, label, opts = {}) {
+  const listId = `dl-${key}`
   return (
     <div key={key} style={opts.full ? { gridColumn: '1 / -1' } : {}}>
       <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>{label}</div>
@@ -350,40 +356,60 @@ function field(state, setState, key, label, opts = {}) {
           style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1.4px dotted var(--ink)', fontFamily: 'var(--f-hand)', fontSize: 17, color: 'var(--ink)', outline: 'none', resize: 'none', paddingBottom: 4 }}
         />
       ) : (
-        <input
-          type={opts.type ?? 'text'}
-          value={state[key]}
-          onChange={e => setState(f => ({ ...f, [key]: e.target.value }))}
-          placeholder={opts.placeholder ?? ''}
-          style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: `1.4px ${opts.dotted ? 'dotted' : 'solid'} var(--ink)`, fontFamily: opts.mono ? 'var(--f-mono)' : 'var(--f-hand)', fontSize: opts.mono ? 12 : 19, color: 'var(--ink)', outline: 'none', paddingBottom: 4 }}
-        />
+        <>
+          <input
+            type={opts.type ?? 'text'}
+            value={state[key]}
+            list={opts.suggestions?.length ? listId : undefined}
+            onChange={e => setState(f => ({ ...f, [key]: e.target.value }))}
+            placeholder={opts.placeholder ?? ''}
+            style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: `1.4px ${opts.dotted ? 'dotted' : 'solid'} var(--ink)`, fontFamily: opts.mono ? 'var(--f-mono)' : 'var(--f-hand)', fontSize: opts.mono ? 12 : 19, color: 'var(--ink)', outline: 'none', paddingBottom: 4 }}
+          />
+          {opts.suggestions?.length > 0 && (
+            <datalist id={listId}>
+              {opts.suggestions.map(s => <option key={s} value={s} />)}
+            </datalist>
+          )}
+        </>
       )}
     </div>
   )
 }
 
-function FicForm({ state, setState, onSubmit, status, submitLabel, tapeLabel, tapeColor = 'var(--primrose)', onCancel }) {
+function FicForm({ state, setState, onSubmit, status, submitLabel, tapeLabel, tapeColor = 'var(--primrose)', onCancel, knownUniverses = [], knownShipsByUniverse = {} }) {
+  const universeShips = (knownShipsByUniverse[state.universe_name] ?? []).filter(s => !state.ships.includes(s))
   return (
     <div className="card" style={{ padding: '28px 28px 22px', position: 'relative', transform: 'rotate(-0.2deg)', marginBottom: 28 }}>
       <Tape kind="dots" color={tapeColor} rot={-2} style={{ top: -12, left: 44, fontSize: 10, padding: '3px 12px' }}>{tapeLabel}</Tape>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px 28px', marginTop: 12 }}>
         {field(state, setState, 'work_name',     'TITRE',          { placeholder: 'nom de la fic…' })}
         {field(state, setState, 'author_name',   'AUTEUR·RICE',    { placeholder: 'nom sur AO3…' })}
-        {field(state, setState, 'universe_name', 'UNIVERS',        { placeholder: 'JJK, ATLA, HP…' })}
+        {field(state, setState, 'universe_name', 'UNIVERS',        { placeholder: 'JJK, ATLA, HP…', suggestions: knownUniverses })}
         <div>
           <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>SHIP(S)</div>
           <TagInput value={state.ships} onChange={ships => setState(f => ({ ...f, ships }))} placeholder="A/B, C/D…" />
+          {universeShips.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+              {universeShips.map(s => (
+                <button key={s} type="button"
+                  onClick={() => setState(f => ({ ...f, ships: [...new Set([...f.ships, s])] }))}
+                  style={{ background: 'transparent', border: '1px dashed rgba(29,26,22,.3)', borderRadius: 2, padding: '1px 7px', fontFamily: 'var(--f-hand)', fontSize: 13, cursor: 'pointer', color: 'var(--ink)', opacity: .65 }}>
+                  + {s}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         {field(state, setState, 'link', 'LIEN AO3', { placeholder: 'https://archiveofourown.org/…', mono: true })}
         <div style={{ gridColumn: '1 / -1' }}>
           <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>IMAGE DE COUVERTURE</div>
           <ImageUpload value={state.image_url} onChange={url => setState(f => ({ ...f, image_url: url }))} bucket="fanfiction-covers" />
         </div>
-        {field(state, setState, 'rank',          'RANK (1–500)',   { type: 'number', placeholder: '42' })}
-        {field(state, setState, 'rating',        'NOTE',           { type: 'number', placeholder: '8.5' })}
-        {field(state, setState, 'word_count',    'NOMBRE DE MOTS', { type: 'number', placeholder: '94300' })}
-        {field(state, setState, 'chapter_count', 'CHAPITRES',      { type: 'number', placeholder: '22' })}
-        {field(state, setState, 'read_count',    'FOIS LU',        { type: 'number', placeholder: '1' })}
+        {field(state, setState, 'rank',          'RANK (1–500)',   { placeholder: '42' })}
+        {field(state, setState, 'rating',        'NOTE',           { placeholder: '8.5' })}
+        {field(state, setState, 'word_count',    'NOMBRE DE MOTS', { placeholder: '94 300' })}
+        {field(state, setState, 'chapter_count', 'CHAPITRES',      { placeholder: '22' })}
+        {field(state, setState, 'read_count',    'FOIS LU',        { placeholder: '1' })}
         <div style={{ gridColumn: '1 / -1' }}>
           <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>TAGS</div>
           <TagInput value={state.tags} onChange={tags => setState(f => ({ ...f, tags }))} />
@@ -510,6 +536,15 @@ export default function GalleryPage() {
     return acc
   }, {})
   const universes = Object.keys(universeMap).sort()
+  const knownUniverses = universes.filter(u => u !== '—')
+  const knownShipsByUniverse = fics.reduce((acc, f) => {
+    if (!f.universe_name || !f.ship_name) return acc
+    f.ship_name.split(' & ').forEach(s => {
+      if (!acc[f.universe_name]) acc[f.universe_name] = []
+      if (!acc[f.universe_name].includes(s)) acc[f.universe_name].push(s)
+    })
+    return acc
+  }, {})
 
   // Fics de l'univers sélectionné, filtrées + triées
   const universeFics = selectedUniverse ? (universeMap[selectedUniverse] || []) : []
@@ -761,6 +796,8 @@ export default function GalleryPage() {
               submitLabel="ajouter ✦"
               tapeLabel="nouvelle entrée"
               onCancel={() => { setShowAddForm(false); setNewFic(EMPTY_FIC) }}
+              knownUniverses={knownUniverses}
+              knownShipsByUniverse={knownShipsByUniverse}
             />
           )}
 
