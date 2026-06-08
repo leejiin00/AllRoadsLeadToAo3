@@ -490,7 +490,7 @@ export default function GalleryPage() {
   async function addFic() {
     if (!newFic.work_name.trim()) return
     setAddStatus('saving')
-    const payload = { ...buildPayload(newFic), user_id: session.user.id }
+    const payload = { ...buildPayload(newFic) }
     const { data, error } = await supabase.from('fanfictions').insert(payload).select().single()
     if (error) { setAddStatus('error'); console.error(error); return }
     setFics(prev => [data, ...prev])
