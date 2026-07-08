@@ -268,7 +268,7 @@ function CharCard({ char, ficheType, onClick, onDelete }) {
         </div>
       </div>
       {hov && (
-        <button onClick={e => { e.stopPropagation(); onDelete(char.id) }} style={{
+        <button onClick={e => { e.stopPropagation(); onDelete(char.id, char.name) }} style={{
           position: 'absolute', top: 8, right: 8, width: 22, height: 22, borderRadius: '50%',
           background: 'rgba(255,250,240,.92)', border: '1px solid rgba(0,0,0,.15)',
           cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -285,7 +285,7 @@ function CharCard({ char, ficheType, onClick, onDelete }) {
 export default function CharacterPage() {
   const [session,   setSession]   = useState(undefined)
   const [chars,     setChars]     = useState([])
-  const [view,      setView]      = useState('home')   // 'home' | 'fandom' | 'sheet'
+  const [view,      setView]      = useState('home')   // 'home' | 'fandom' | 'detail' | 'sheet'
   const [selFandom, setSelFandom] = useState(null)
   const [activeId,  setActiveId]  = useState(null)
   const [loading,   setLoading]   = useState(true)
@@ -298,6 +298,9 @@ export default function CharacterPage() {
   const fandoms     = [...new Set(chars.map(c => c.fandom).filter(Boolean))]
   const fandomChars = selFandom ? chars.filter(c => c.fandom === selFandom) : chars
   const typedChars  = fandomChars.filter(c => getType(c) === activeType)
+  const fandomFt    = FICHE_TYPES.find(t => t.key === activeType) ?? FICHE_TYPES[0]
+  const detailFt    = FICHE_TYPES.find(t => t.key === charType) ?? FICHE_TYPES[0]
+  const isPersoDetail = charType === 'personnage'
 
   /* ── Auth + load ── */
   useEffect(() => {
@@ -352,7 +355,13 @@ export default function CharacterPage() {
     setSaved(true)
   }
 
-  async function deleteChar(id) {
+  async function deleteChar(id, name) {
+    if (!confirm(`Supprimer la fiche "${name || 'ce personnage'}" ?`)) return
+    const char = chars.find(c => c.id === id)
+    if (char?.portrait_front && char.portrait_front.includes('character-portraits')) {
+      const path = char.portrait_front.split('/character-portraits/')[1]
+      if (path) await supabase.storage.from(BUCKET).remove([path])
+    }
     await supabase.from('characters').delete().eq('id', id)
     const rest = chars.filter(c => c.id !== id)
     setChars(rest)
@@ -382,353 +391,344 @@ export default function CharacterPage() {
   )
 
   /* ══════════════════════════════════════════════════════
-     VUE HOME — grille de fandoms
-  ══════════════════════════════════════════════════════ */
-  if (view === 'home') return (
-    <Page>
-      <Header active="characters" />
-      <div style={{ padding: '88px 56px 56px' }}>
-
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
-            <RibbonMark color="var(--pinktone)" h={64} w={24} rot={-4} style={{ marginBottom: 6, flexShrink: 0 }} />
-            <div>
-              <div className="mono" style={{ fontSize: 11, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>SECTION E</div>
-              <div className="heading-handwritten" style={{ fontSize: 'clamp(52px, 7vw, 88px)', color: 'var(--ink)', lineHeight: .9, marginTop: 4 }}>
-                Mes persos
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignSelf: 'flex-end', marginBottom: 10 }}>
-            <button onClick={() => { setSelFandom(null); setView('fandom') }} className="btn-stamp btn-stamp--ghost" style={{ padding: '10px 18px', fontSize: 13 }}>
-              tous · {chars.length}
-            </button>
-            <button onClick={() => newChar()} className="btn-stamp" style={{ padding: '10px 18px', fontSize: 13 }}>
-              + nouveau
-            </button>
-          </div>
-        </div>
-
-        <WaveDivider width={320} style={{ marginBottom: 44, opacity: .65 }} />
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '52px 32px', alignItems: 'start' }}>
-          {fandoms.map(f => (
-            <FandomCard key={f} fandom={f}
-              count={chars.filter(c => c.fandom === f).length}
-              onClick={() => { setSelFandom(f); setView('fandom') }} />
-          ))}
-        </div>
-
-        {fandoms.length === 0 && (
-          <div style={{ marginTop: 32, textAlign: 'center' }}>
-            <div className="handwriting" style={{ fontSize: 22, color: 'var(--ink-mute)', marginBottom: 8 }}>aucun fandom pour l'instant…</div>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: 'var(--ink-mute)' }}>
-              crée un personnage et assigne-lui un fandom
-            </div>
-          </div>
-        )}
-      </div>
-      <Sticker kind="flower_white" size={85} rot={10} style={{ position: 'absolute', top: 72, right: 40, opacity: .6 }} />
-      <Sticker kind="tulips"       size={78} rot={-8} style={{ position: 'absolute', bottom: 70, right: 44, opacity: .6 }} />
-      <div className="floral-corner" style={{ opacity: .35, pointerEvents: 'none' }} />
-    </Page>
-  )
-
-  /* ══════════════════════════════════════════════════════
-     VUE FANDOM — onglets par type de fiche
-  ══════════════════════════════════════════════════════ */
-  if (view === 'fandom') {
-    const ft = FICHE_TYPES.find(t => t.key === activeType) ?? FICHE_TYPES[0]
-    return (
-    <Page>
-      <Header active="characters" />
-      <div style={{ padding: '88px 56px 56px' }}>
-
-        {/* Nav */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
-          <button onClick={() => setView('home')} className="btn-stamp btn-stamp--ghost" style={{ padding: '8px 16px', fontSize: 12 }}>
-            ← fandoms
-          </button>
-          <div className="handwriting" style={{ fontSize: 36, color: 'var(--ink)', lineHeight: 1 }}>
-            {selFandom ?? 'Tous les projets'}
-          </div>
-          <button onClick={() => newChar(selFandom ?? '', activeType)} className="btn-stamp" style={{ padding: '8px 16px', fontSize: 12, marginLeft: 'auto' }}>
-            + nouveau
-          </button>
-        </div>
-
-        {/* Onglets types */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 36 }}>
-          {FICHE_TYPES.map(t => {
-            const cnt = fandomChars.filter(c => getType(c) === t.key).length
-            const isActive = activeType === t.key
-            return (
-              <button key={t.key} onClick={() => setActiveType(t.key)} style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '8px 16px', borderRadius: 20, border: 'none', cursor: 'pointer',
-                background: isActive ? t.col : 'rgba(29,26,22,.07)',
-                fontFamily: 'var(--f-hand)', fontSize: 14, color: 'var(--ink)',
-                boxShadow: isActive ? '0 2px 8px rgba(60,40,20,.12)' : 'none',
-                transition: 'background .15s, box-shadow .15s',
-              }}>
-                <span>{t.emoji}</span>
-                <span>{t.label}</span>
-                <span className="mono" style={{ fontSize: 9, opacity: .6 }}>{cnt}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        <WaveDivider width={260} style={{ marginBottom: 36, opacity: .6 }} />
-
-        {/* Grille fiches du type actif */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '40px 24px', alignItems: 'start' }}>
-          {typedChars.map(c => (
-            <CharCard key={c.id} char={c} ficheType={ft}
-              onClick={() => { setActiveId(c.id); setView('detail') }}
-              onDelete={deleteChar} />
-          ))}
-        </div>
-
-        {typedChars.length === 0 && (
-          <div style={{ marginTop: 32, textAlign: 'center' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>{ft.emoji}</div>
-            <div className="handwriting" style={{ fontSize: 22, color: 'var(--ink-mute)' }}>
-              aucune fiche « {ft.label} » ici…
-            </div>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: '.16em', color: 'var(--ink-mute)', marginTop: 8 }}>
-              clique sur + nouveau pour en créer une
-            </div>
-          </div>
-        )}
-      </div>
-      <Sticker kind="shrub" size={88} rot={6} style={{ position: 'absolute', bottom: 70, left: 40, opacity: .55 }} />
-    </Page>
-  )}
-
-  /* ══════════════════════════════════════════════════════
-     VUE DETAIL — profil lecture seule
-  ══════════════════════════════════════════════════════ */
-  if (view === 'detail' && active) {
-    const { type: detailType, sections: detailSections } = parseNotes(active.notes ?? '')
-    const detailFt = FICHE_TYPES.find(t => t.key === detailType) ?? FICHE_TYPES[0]
-    const isPersoDetail = detailType === 'personnage'
-
-    return (
-      <Page>
-        <Header active="characters" />
-        <div style={{ padding: '88px 56px 56px' }}>
-
-          {/* Nav */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 36 }}>
-            <button onClick={() => setView(selFandom ? 'fandom' : 'home')} className="btn-stamp btn-stamp--ghost" style={{ padding: '8px 16px', fontSize: 12 }}>
-              ← {selFandom ?? 'fandoms'}
-            </button>
-            <button onClick={() => setView('sheet')} className="btn-stamp" style={{ padding: '8px 16px', fontSize: 12, marginLeft: 'auto' }}>
-              ✎ éditer
-            </button>
-          </div>
-
-          {/* En-tête */}
-          <div style={{ display: 'flex', gap: 36, alignItems: 'flex-start', marginBottom: 44, flexWrap: 'wrap' }}>
-            {isPersoDetail && (
-              <div style={{
-                background: '#fffef8', padding: '8px 8px 32px', flexShrink: 0,
-                boxShadow: '0 12px 28px rgba(60,40,20,.2)', transform: 'rotate(-1.5deg)',
-              }}>
-                <div style={{
-                  width: 160, height: 216, overflow: 'hidden',
-                  background: active.portrait_front
-                    ? `url(${active.portrait_front}) center/cover`
-                    : `linear-gradient(160deg, ${detailFt.col}55, ${detailFt.col}cc)`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {!active.portrait_front && <div style={{ fontSize: 48 }}>{detailFt.emoji}</div>}
-                </div>
-              </div>
-            )}
-            <div style={{ flex: 1, minWidth: 0, paddingTop: 8 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: detailFt.col, borderRadius: 20, padding: '4px 14px', marginBottom: 14 }}>
-                <span>{detailFt.emoji}</span>
-                <span className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: 'var(--ink)' }}>{detailFt.label.toUpperCase()}</span>
-              </div>
-              <div className="heading-handwritten" style={{ fontSize: 'clamp(40px, 6vw, 72px)', color: 'var(--ink)', lineHeight: .92, marginBottom: 10 }}>
-                {active.name || '(sans titre)'}
-              </div>
-              {active.fandom && (
-                <div className="mono" style={{ fontSize: 11, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>
-                  {active.fandom.toUpperCase()}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Séparateur */}
-          <div style={{ height: 1, background: 'rgba(29,26,22,.1)', marginBottom: 36 }} />
-
-          {/* Sections en lecture seule */}
-          {detailSections.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 24 }}>
-              {detailSections.map((s, i) => (
-                <div key={s.id} style={{
-                  background: '#fffaf0', borderRadius: 3, padding: '20px 24px',
-                  boxShadow: '0 4px 14px rgba(60,40,20,.1)',
-                }}>
-                  <div style={{ background: sCol(i), borderRadius: 20, padding: '4px 14px', display: 'inline-flex', marginBottom: 16 }}>
-                    <span className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink)' }}>{s.title}</span>
-                  </div>
-                  {s.fields.map(f => (
-                    <div key={f.id} style={{ marginBottom: 12 }}>
-                      <div className="mono" style={{ fontSize: 8, letterSpacing: '.2em', color: 'var(--ink-mute)', marginBottom: 3 }}>{f.label.toUpperCase()}</div>
-                      <div className="handwriting" style={{ fontSize: 16, color: 'var(--ink)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-                        {f.value || <span style={{ opacity: .3 }}>—</span>}
-                      </div>
-                    </div>
-                  ))}
-                  {s.fields.length === 0 && (
-                    <div className="mono" style={{ fontSize: 9, color: 'var(--ink-mute)', opacity: .5 }}>aucun champ</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center', marginTop: 24 }}>
-              <div className="handwriting" style={{ fontSize: 22, color: 'var(--ink-mute)', marginBottom: 16 }}>
-                aucune section pour l'instant…
-              </div>
-              <button onClick={() => setView('sheet')} className="btn-stamp" style={{ padding: '10px 24px', fontSize: 13 }}>
-                ✎ éditer la fiche
-              </button>
-            </div>
-          )}
-
-        </div>
-        <Sticker kind="flower_white" size={80} rot={10} style={{ position: 'absolute', bottom: 80, right: 44, opacity: .5, pointerEvents: 'none' }} />
-        <div className="floral-corner" style={{ opacity: .2, pointerEvents: 'none' }} />
-      </Page>
-    )
-  }
-
-  /* ══════════════════════════════════════════════════════
-     VUE SHEET — fiche portrait A4
+     VUES : home | fandom | detail | sheet  (un seul <Page> wrapper)
   ══════════════════════════════════════════════════════ */
   return (
     <Page>
       <Header active="characters" />
 
-      {/* Pousse la barre sous le Header (position:absolute top:28 + ~40px hauteur) */}
-      <div style={{ height: 68 }} />
+      {/* ══ VUE HOME — grille de fandoms ══ */}
+      {view === 'home' && (
+        <>
+          <div style={{ padding: '88px 56px 56px' }}>
 
-      {/* Barre supérieure sticky */}
-      <div style={{
-        position: 'sticky', top: 0, zIndex: 10,
-        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px',
-        background: 'rgba(255,250,240,.94)', borderBottom: '1px dotted rgba(0,0,0,.1)',
-        backdropFilter: 'blur(6px)',
-      }}>
-        <button onClick={() => setView(activeId ? 'detail' : selFandom ? 'fandom' : 'home')} className="btn-stamp btn-stamp--ghost" style={{ padding: '6px 14px', fontSize: 12 }}>
-          ← {active?.name || (selFandom ?? 'fandoms')}
-        </button>
-        <span className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: saved ? 'var(--ink-mute)' : 'var(--primrose)', transition: 'color .3s', marginLeft: 'auto' }}>
-          {saved ? '✓ sauvegardé' : '● en cours…'}
-        </span>
-        <button onClick={() => active && deleteChar(active.id)} title="Supprimer ce personnage" style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: 'rgba(29,26,22,.3)', fontSize: 14, padding: '4px 8px',
-        }}>✕</button>
-      </div>
-
-      {/* Page A4 portrait centrée */}
-      {active && (
-        <div style={{ padding: '44px 24px 80px', display: 'flex', justifyContent: 'center' }}>
-          <div style={{
-            width: 620, maxWidth: '100%',
-            background: '#fffaf0',
-            boxShadow: '0 12px 44px rgba(30,20,10,.18), 0 2px 6px rgba(30,20,10,.1)',
-            borderRadius: 3,
-            padding: '48px 52px 64px',
-            position: 'relative',
-          }}>
-
-            {/* Déco tapes */}
-            <Tape kind="dots" color="var(--primrose)" rot={-4}
-              style={{ top: -12, left: 60, fontSize: 10, padding: '3px 14px' }}>
-              fiche de personnage
-            </Tape>
-            {active.fandom && (
-              <Tape kind="grid" color="var(--lime)" rot={3}
-                style={{ top: -12, right: 60, fontSize: 10, padding: '3px 14px' }}>
-                {active.fandom}
-              </Tape>
-            )}
-
-            {/* Badge type */}
-            {(() => {
-              const ft = FICHE_TYPES.find(t => t.key === charType) ?? FICHE_TYPES[0]
-              return (
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: ft.col, borderRadius: 20, padding: '4px 14px', marginBottom: 20 }}>
-                  <span>{ft.emoji}</span>
-                  <span className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: 'var(--ink)' }}>{ft.label.toUpperCase()}</span>
-                </div>
-              )
-            })()}
-
-            {/* En-tête : portrait (personnages) ou titre seul */}
-            {charType === 'personnage' ? (
-              <div style={{ display: 'flex', gap: 28, marginBottom: 36, alignItems: 'flex-start' }}>
-                <PortraitUpload value={active.portrait_front ?? ''} onChange={v => setField('portrait_front', v)} size={110} />
-                <div style={{ flex: 1, paddingTop: 6 }}>
-                  <input value={active.name ?? ''} onChange={e => setField('name', e.target.value)} placeholder="Nom du personnage…"
-                    style={{ display: 'block', width: '100%', marginBottom: 14, fontFamily: 'var(--f-hand)', fontSize: 32, color: 'var(--ink)', background: 'transparent', border: 'none', outline: 'none', borderBottom: '1.5px solid rgba(29,26,22,.22)', paddingBottom: 4 }} />
-                  <div className="mono" style={{ fontSize: 7.5, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 4 }}>FANDOM / UNIVERS</div>
-                  <input value={active.fandom ?? ''} onChange={e => setField('fandom', e.target.value)} placeholder="—"
-                    style={{ fontFamily: 'var(--f-hand)', fontSize: 16, color: 'var(--ink)', background: 'transparent', border: 'none', outline: 'none', borderBottom: '1.2px solid rgba(29,26,22,.18)', width: '100%', paddingBottom: 2 }} />
+            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+                <RibbonMark color="var(--pinktone)" h={64} w={24} rot={-4} style={{ marginBottom: 6, flexShrink: 0 }} />
+                <div>
+                  <div className="mono" style={{ fontSize: 11, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>SECTION E</div>
+                  <div className="heading-handwritten" style={{ fontSize: 'clamp(52px, 7vw, 88px)', color: 'var(--ink)', lineHeight: .9, marginTop: 4 }}>
+                    Mes persos
+                  </div>
                 </div>
               </div>
-            ) : (
-              <div style={{ marginBottom: 36 }}>
-                <input value={active.name ?? ''} onChange={e => setField('name', e.target.value)} placeholder="Titre…"
-                  style={{ display: 'block', width: '100%', marginBottom: 14, fontFamily: 'var(--f-hand)', fontSize: 32, color: 'var(--ink)', background: 'transparent', border: 'none', outline: 'none', borderBottom: '1.5px solid rgba(29,26,22,.22)', paddingBottom: 4 }} />
-                <div className="mono" style={{ fontSize: 7.5, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 4 }}>FANDOM / UNIVERS</div>
-                <input value={active.fandom ?? ''} onChange={e => setField('fandom', e.target.value)} placeholder="—"
-                  style={{ fontFamily: 'var(--f-hand)', fontSize: 16, color: 'var(--ink)', background: 'transparent', border: 'none', outline: 'none', borderBottom: '1.2px solid rgba(29,26,22,.18)', width: '100%', paddingBottom: 2 }} />
+              <div style={{ display: 'flex', gap: 10, alignSelf: 'flex-end', marginBottom: 10 }}>
+                <button onClick={() => { setSelFandom(null); setView('fandom') }} className="btn-stamp btn-stamp--ghost" style={{ padding: '10px 18px', fontSize: 13 }}>
+                  tous · {chars.length}
+                </button>
+                <button onClick={() => newChar()} className="btn-stamp" style={{ padding: '10px 18px', fontSize: 13 }}>
+                  + nouveau
+                </button>
               </div>
-            )}
-
-            {/* Séparateur */}
-            <div style={{ height: 1, background: 'rgba(29,26,22,.1)', marginBottom: 32 }} />
-
-            {/* Sections personnalisées */}
-            {sections.map((s, i) => (
-              <SectionBlock key={s.id} section={s} idx={i}
-                onChange={u => updateSection(s.id, u)}
-                onDelete={() => delSection(s.id)} />
-            ))}
-
-            {/* Bouton ajouter section */}
-            <button onClick={addSection} style={{
-              marginTop: sections.length ? 8 : 0,
-              background: 'none', border: '1.5px dashed rgba(29,26,22,.2)',
-              borderRadius: 20, cursor: 'pointer', padding: '8px 24px',
-              fontFamily: 'var(--f-hand)', fontSize: 14, color: 'rgba(29,26,22,.38)',
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>
-              <span>＋</span> ajouter une section
-            </button>
-
-            {/* Pied de page */}
-            <div style={{ marginTop: 44, textAlign: 'right' }}>
-              <span className="mono" style={{ fontSize: 7.5, letterSpacing: '.28em', color: 'var(--ink-mute)' }}>
-                ─ FICHE DE PERSONNAGE ─ {(active.fandom || '—').toUpperCase()} ─
-              </span>
             </div>
 
-            <Sticker kind="tulips" size={76} rot={14} style={{ position: 'absolute', bottom: 56, right: 22, opacity: .45, pointerEvents: 'none' }} />
+            <WaveDivider width={320} style={{ marginBottom: 44, opacity: .65 }} />
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '52px 32px', alignItems: 'start' }}>
+              {fandoms.map(f => (
+                <FandomCard key={f} fandom={f}
+                  count={chars.filter(c => c.fandom === f).length}
+                  onClick={() => { setSelFandom(f); setView('fandom') }} />
+              ))}
+            </div>
+
+            {fandoms.length === 0 && (
+              <div style={{ marginTop: 32, textAlign: 'center' }}>
+                <div className="handwriting" style={{ fontSize: 22, color: 'var(--ink-mute)', marginBottom: 8 }}>aucun fandom pour l'instant…</div>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: 'var(--ink-mute)' }}>
+                  crée un personnage et assigne-lui un fandom
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+
+          <Sticker kind="flower_white" size={85} rot={10} style={{ position: 'absolute', top: 72, right: 40, opacity: .6 }} />
+          <Sticker kind="tulips"       size={78} rot={-8} style={{ position: 'absolute', bottom: 70, right: 44, opacity: .6 }} />
+          <div className="floral-corner" style={{ opacity: .35, pointerEvents: 'none' }} />
+        </>
       )}
 
-      <div className="floral-corner" style={{ opacity: .18, pointerEvents: 'none' }} />
+      {/* ══ VUE FANDOM — onglets par type de fiche ══ */}
+      {view === 'fandom' && (
+        <>
+          <div style={{ padding: '88px 56px 56px' }}>
+
+            {/* Nav */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
+              <button onClick={() => setView('home')} className="btn-stamp btn-stamp--ghost" style={{ padding: '8px 16px', fontSize: 12 }}>
+                ← fandoms
+              </button>
+              <div className="handwriting" style={{ fontSize: 36, color: 'var(--ink)', lineHeight: 1 }}>
+                {selFandom ?? 'Tous les projets'}
+              </div>
+              <button onClick={() => newChar(selFandom ?? '', activeType)} className="btn-stamp" style={{ padding: '8px 16px', fontSize: 12, marginLeft: 'auto' }}>
+                + nouveau
+              </button>
+            </div>
+
+            {/* Onglets types */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 36 }}>
+              {FICHE_TYPES.map(t => {
+                const cnt = fandomChars.filter(c => getType(c) === t.key).length
+                const isActive = activeType === t.key
+                return (
+                  <button key={t.key} onClick={() => setActiveType(t.key)} style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '8px 16px', borderRadius: 20, border: 'none', cursor: 'pointer',
+                    background: isActive ? t.col : 'rgba(29,26,22,.07)',
+                    fontFamily: 'var(--f-hand)', fontSize: 14, color: 'var(--ink)',
+                    boxShadow: isActive ? '0 2px 8px rgba(60,40,20,.12)' : 'none',
+                    transition: 'background .15s, box-shadow .15s',
+                  }}>
+                    <span>{t.emoji}</span>
+                    <span>{t.label}</span>
+                    <span className="mono" style={{ fontSize: 9, opacity: .6 }}>{cnt}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            <WaveDivider width={260} style={{ marginBottom: 36, opacity: .6 }} />
+
+            {/* Grille fiches du type actif */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '40px 24px', alignItems: 'start' }}>
+              {typedChars.map(c => (
+                <CharCard key={c.id} char={c} ficheType={fandomFt}
+                  onClick={() => { setActiveId(c.id); setView('detail') }}
+                  onDelete={deleteChar} />
+              ))}
+            </div>
+
+            {typedChars.length === 0 && (
+              <div style={{ marginTop: 32, textAlign: 'center' }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>{fandomFt.emoji}</div>
+                <div className="handwriting" style={{ fontSize: 22, color: 'var(--ink-mute)' }}>
+                  aucune fiche « {fandomFt.label} » ici…
+                </div>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: '.16em', color: 'var(--ink-mute)', marginTop: 8 }}>
+                  clique sur + nouveau pour en créer une
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Sticker kind="shrub" size={88} rot={6} style={{ position: 'absolute', bottom: 70, left: 40, opacity: .55 }} />
+        </>
+      )}
+
+      {/* ══ VUE DETAIL — profil lecture seule ══ */}
+      {view === 'detail' && active && (
+        <>
+          <div style={{ padding: '88px 56px 56px' }}>
+
+            {/* Nav */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 36 }}>
+              <button onClick={() => setView(selFandom ? 'fandom' : 'home')} className="btn-stamp btn-stamp--ghost" style={{ padding: '8px 16px', fontSize: 12 }}>
+                ← {selFandom ?? 'fandoms'}
+              </button>
+              <button onClick={() => setView('sheet')} className="btn-stamp" style={{ padding: '8px 16px', fontSize: 12, marginLeft: 'auto' }}>
+                ✎ éditer
+              </button>
+            </div>
+
+            {/* En-tête */}
+            <div style={{ display: 'flex', gap: 36, alignItems: 'flex-start', marginBottom: 44, flexWrap: 'wrap' }}>
+              {isPersoDetail && (
+                <div style={{
+                  background: '#fffef8', padding: '8px 8px 32px', flexShrink: 0,
+                  boxShadow: '0 12px 28px rgba(60,40,20,.2)', transform: 'rotate(-1.5deg)',
+                }}>
+                  <div style={{
+                    width: 160, height: 216, overflow: 'hidden',
+                    background: active.portrait_front
+                      ? `url(${active.portrait_front}) center/cover`
+                      : `linear-gradient(160deg, ${detailFt.col}55, ${detailFt.col}cc)`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {!active.portrait_front && <div style={{ fontSize: 48 }}>{detailFt.emoji}</div>}
+                  </div>
+                </div>
+              )}
+              <div style={{ flex: 1, minWidth: 0, paddingTop: 8 }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: detailFt.col, borderRadius: 20, padding: '4px 14px', marginBottom: 14 }}>
+                  <span>{detailFt.emoji}</span>
+                  <span className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: 'var(--ink)' }}>{detailFt.label.toUpperCase()}</span>
+                </div>
+                <div className="heading-handwritten" style={{ fontSize: 'clamp(40px, 6vw, 72px)', color: 'var(--ink)', lineHeight: .92, marginBottom: 10 }}>
+                  {active.name || '(sans titre)'}
+                </div>
+                {active.fandom && (
+                  <div className="mono" style={{ fontSize: 11, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>
+                    {active.fandom.toUpperCase()}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Séparateur */}
+            <div style={{ height: 1, background: 'rgba(29,26,22,.1)', marginBottom: 36 }} />
+
+            {/* Sections en lecture seule */}
+            {sections.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 24 }}>
+                {sections.map((s, i) => (
+                  <div key={s.id} style={{
+                    background: '#fffaf0', borderRadius: 3, padding: '20px 24px',
+                    boxShadow: '0 4px 14px rgba(60,40,20,.1)',
+                  }}>
+                    <div style={{ background: sCol(i), borderRadius: 20, padding: '4px 14px', display: 'inline-flex', marginBottom: 16 }}>
+                      <span className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink)' }}>{s.title}</span>
+                    </div>
+                    {s.fields.map(f => (
+                      <div key={f.id} style={{ marginBottom: 12 }}>
+                        <div className="mono" style={{ fontSize: 8, letterSpacing: '.2em', color: 'var(--ink-mute)', marginBottom: 3 }}>{f.label.toUpperCase()}</div>
+                        <div className="handwriting" style={{ fontSize: 16, color: 'var(--ink)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                          {f.value || <span style={{ opacity: .3 }}>—</span>}
+                        </div>
+                      </div>
+                    ))}
+                    {s.fields.length === 0 && (
+                      <div className="mono" style={{ fontSize: 9, color: 'var(--ink-mute)', opacity: .5 }}>aucun champ</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', marginTop: 24 }}>
+                <div className="handwriting" style={{ fontSize: 22, color: 'var(--ink-mute)', marginBottom: 16 }}>
+                  aucune section pour l'instant…
+                </div>
+                <button onClick={() => setView('sheet')} className="btn-stamp" style={{ padding: '10px 24px', fontSize: 13 }}>
+                  ✎ éditer la fiche
+                </button>
+              </div>
+            )}
+
+          </div>
+
+          <Sticker kind="flower_white" size={80} rot={10} style={{ position: 'absolute', bottom: 80, right: 44, opacity: .5, pointerEvents: 'none' }} />
+          <div className="floral-corner" style={{ opacity: .2, pointerEvents: 'none' }} />
+        </>
+      )}
+
+      {/* ══ VUE SHEET — fiche portrait A4 ══ */}
+      {view === 'sheet' && (
+        <>
+          {/* Pousse la barre sous le Header (position:absolute top:28 + ~40px hauteur) */}
+          <div style={{ height: 68 }} />
+
+          {/* Barre supérieure sticky */}
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 10,
+            display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px',
+            background: 'rgba(255,250,240,.94)', borderBottom: '1px dotted rgba(0,0,0,.1)',
+            backdropFilter: 'blur(6px)',
+          }}>
+            <button onClick={() => setView(activeId ? 'detail' : selFandom ? 'fandom' : 'home')} className="btn-stamp btn-stamp--ghost" style={{ padding: '6px 14px', fontSize: 12 }}>
+              ← {active?.name || (selFandom ?? 'fandoms')}
+            </button>
+            <span className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: saved ? 'var(--ink-mute)' : 'var(--primrose)', transition: 'color .3s', marginLeft: 'auto' }}>
+              {saved ? '✓ sauvegardé' : '● en cours…'}
+            </span>
+            <button onClick={() => active && deleteChar(active.id, active.name)} title="Supprimer ce personnage" style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'rgba(29,26,22,.3)', fontSize: 14, padding: '4px 8px',
+            }}>✕</button>
+          </div>
+
+          {/* Page A4 portrait centrée */}
+          {active && (
+            <div style={{ padding: '44px 24px 80px', display: 'flex', justifyContent: 'center' }}>
+              <div style={{
+                width: 620, maxWidth: '100%',
+                background: '#fffaf0',
+                boxShadow: '0 12px 44px rgba(30,20,10,.18), 0 2px 6px rgba(30,20,10,.1)',
+                borderRadius: 3,
+                padding: '48px 52px 64px',
+                position: 'relative',
+              }}>
+
+                {/* Déco tapes */}
+                <Tape kind="dots" color="var(--primrose)" rot={-4}
+                  style={{ top: -12, left: 60, fontSize: 10, padding: '3px 14px' }}>
+                  fiche de personnage
+                </Tape>
+                {active.fandom && (
+                  <Tape kind="grid" color="var(--lime)" rot={3}
+                    style={{ top: -12, right: 60, fontSize: 10, padding: '3px 14px' }}>
+                    {active.fandom}
+                  </Tape>
+                )}
+
+                {/* Badge type */}
+                {(() => {
+                  const ft = FICHE_TYPES.find(t => t.key === charType) ?? FICHE_TYPES[0]
+                  return (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: ft.col, borderRadius: 20, padding: '4px 14px', marginBottom: 20 }}>
+                      <span>{ft.emoji}</span>
+                      <span className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: 'var(--ink)' }}>{ft.label.toUpperCase()}</span>
+                    </div>
+                  )
+                })()}
+
+                {/* En-tête : portrait (personnages) ou titre seul */}
+                {charType === 'personnage' ? (
+                  <div style={{ display: 'flex', gap: 28, marginBottom: 36, alignItems: 'flex-start' }}>
+                    <PortraitUpload value={active.portrait_front ?? ''} onChange={v => setField('portrait_front', v)} size={110} />
+                    <div style={{ flex: 1, paddingTop: 6 }}>
+                      <input value={active.name ?? ''} onChange={e => setField('name', e.target.value)} placeholder="Nom du personnage…"
+                        style={{ display: 'block', width: '100%', marginBottom: 14, fontFamily: 'var(--f-hand)', fontSize: 32, color: 'var(--ink)', background: 'transparent', border: 'none', outline: 'none', borderBottom: '1.5px solid rgba(29,26,22,.22)', paddingBottom: 4 }} />
+                      <div className="mono" style={{ fontSize: 7.5, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 4 }}>FANDOM / UNIVERS</div>
+                      <input value={active.fandom ?? ''} onChange={e => setField('fandom', e.target.value)} placeholder="—"
+                        style={{ fontFamily: 'var(--f-hand)', fontSize: 16, color: 'var(--ink)', background: 'transparent', border: 'none', outline: 'none', borderBottom: '1.2px solid rgba(29,26,22,.18)', width: '100%', paddingBottom: 2 }} />
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 36 }}>
+                    <input value={active.name ?? ''} onChange={e => setField('name', e.target.value)} placeholder="Titre…"
+                      style={{ display: 'block', width: '100%', marginBottom: 14, fontFamily: 'var(--f-hand)', fontSize: 32, color: 'var(--ink)', background: 'transparent', border: 'none', outline: 'none', borderBottom: '1.5px solid rgba(29,26,22,.22)', paddingBottom: 4 }} />
+                    <div className="mono" style={{ fontSize: 7.5, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 4 }}>FANDOM / UNIVERS</div>
+                    <input value={active.fandom ?? ''} onChange={e => setField('fandom', e.target.value)} placeholder="—"
+                      style={{ fontFamily: 'var(--f-hand)', fontSize: 16, color: 'var(--ink)', background: 'transparent', border: 'none', outline: 'none', borderBottom: '1.2px solid rgba(29,26,22,.18)', width: '100%', paddingBottom: 2 }} />
+                  </div>
+                )}
+
+                {/* Séparateur */}
+                <div style={{ height: 1, background: 'rgba(29,26,22,.1)', marginBottom: 32 }} />
+
+                {/* Sections personnalisées */}
+                {sections.map((s, i) => (
+                  <SectionBlock key={s.id} section={s} idx={i}
+                    onChange={u => updateSection(s.id, u)}
+                    onDelete={() => delSection(s.id)} />
+                ))}
+
+                {/* Bouton ajouter section */}
+                <button onClick={addSection} style={{
+                  marginTop: sections.length ? 8 : 0,
+                  background: 'none', border: '1.5px dashed rgba(29,26,22,.2)',
+                  borderRadius: 20, cursor: 'pointer', padding: '8px 24px',
+                  fontFamily: 'var(--f-hand)', fontSize: 14, color: 'rgba(29,26,22,.38)',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                  <span>＋</span> ajouter une section
+                </button>
+
+                {/* Pied de page */}
+                <div style={{ marginTop: 44, textAlign: 'right' }}>
+                  <span className="mono" style={{ fontSize: 7.5, letterSpacing: '.28em', color: 'var(--ink-mute)' }}>
+                    ─ FICHE DE PERSONNAGE ─ {(active.fandom || '—').toUpperCase()} ─
+                  </span>
+                </div>
+
+                <Sticker kind="tulips" size={76} rot={14} style={{ position: 'absolute', bottom: 56, right: 22, opacity: .45, pointerEvents: 'none' }} />
+              </div>
+            </div>
+          )}
+
+          <div className="floral-corner" style={{ opacity: .18, pointerEvents: 'none' }} />
+        </>
+      )}
     </Page>
   )
 }

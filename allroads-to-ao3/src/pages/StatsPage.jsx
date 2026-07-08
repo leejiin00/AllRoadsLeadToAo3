@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import { Page, Header, Tape, Sticky, Sticker } from '../components/JournalShared'
 import { supabase } from '../lib/supabase'
 
@@ -191,15 +190,18 @@ export default function StatsPage() {
   const content    = contentDistrib(periodFics)
 
   // ── Stats globales ──
-  const longestFic  = topBy(fics, 'word_count', 1)[0]
+  const top3Longest = topBy(fics, 'word_count', 3)
+  const longestFic  = top3Longest[0]
   const mostReread  = topBy(fics, 'read_count',  1)[0]
   const bestRated   = topBy(fics, 'rating',       1)[0]
-  const rankOne     = fics.find(f => f.rank === 1)
+  const goldFic     = fics.find(f => f.medal === 'gold')
   const globalAvg   = avg(fics, 'rating')
   const totalWords  = sum(fics, 'word_count')
   const totalFics   = fics.length
-  const readingHrs  = Math.round(wordTotal / 250)       // ~250 mots/min
-  const readingHrsTotal = Math.round(totalWords / 250)
+  const readingMins      = Math.round(wordTotal / 250)
+  const readingHrs       = readingMins >= 60 ? (readingMins / 60).toFixed(1) + 'h' : readingMins + 'min'
+  const readingMinsTotal = Math.round(totalWords / 250)
+  const readingHrsTotal  = readingMinsTotal >= 60 ? (readingMinsTotal / 60).toFixed(1) + 'h' : readingMinsTotal + 'min'
   const happyPct    = fics.length ? Math.round((fics.filter(f => f.good_ending && !f.bad_ending).length / fics.length) * 100) : 0
 
   const endingBarData = [
@@ -223,7 +225,7 @@ export default function StatsPage() {
         {/* ── En-tête ── */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 40 }}>
           <div>
-            <div className="mono" style={{ fontSize: 11, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>SECTION D</div>
+            <div className="mono" style={{ fontSize: 11, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>SECTION E</div>
             <div className="heading-handwritten" style={{ fontSize: 'clamp(48px, 6vw, 80px)', color: 'var(--ink)', lineHeight: .95, marginTop: 4 }}>
               mes statistiques
             </div>
@@ -270,7 +272,7 @@ export default function StatsPage() {
                 <BigNumber value={wordTotal > 0 ? wordTotal.toLocaleString('fr-FR') : '—'} color="var(--ink)" />
                 {wordTotal > 0 && (
                   <div className="handwriting" style={{ fontSize: 12, color: 'var(--ink-mute)', textAlign: 'center', marginTop: 4 }}>
-                    ≈ {readingHrs}h de lecture
+                    ≈ {readingHrs} de lecture
                   </div>
                 )}
               </StatCard>
@@ -356,14 +358,14 @@ export default function StatsPage() {
                   <div>
                     <div className="mono" style={{ fontSize: 8, letterSpacing: '.2em', color: 'var(--ink-mute)', marginBottom: 3 }}>TEMPS DE LECTURE ({period === 'month' ? 'ce mois' : 'cette année'})</div>
                     <div className="serif" style={{ fontSize: 28, color: 'var(--ink)' }}>
-                      {readingHrs > 0 ? `${readingHrs}h` : '—'}
+                      {readingMins > 0 ? readingHrs : '—'}
                     </div>
                     <div className="handwriting" style={{ fontSize: 13, color: 'var(--ink-mute)' }}>à 250 mots/min</div>
                   </div>
                   <div>
                     <div className="mono" style={{ fontSize: 8, letterSpacing: '.2em', color: 'var(--ink-mute)', marginBottom: 3 }}>TOTAL BIBLIOTHÈQUE</div>
                     <div className="serif" style={{ fontSize: 22, color: 'var(--ink)' }}>
-                      {readingHrsTotal > 0 ? `${readingHrsTotal}h` : '—'}
+                      {readingMinsTotal > 0 ? readingHrsTotal : '—'}
                     </div>
                     <div className="handwriting" style={{ fontSize: 13, color: 'var(--ink-mute)' }}>{totalWords > 0 ? `${totalWords.toLocaleString('fr-FR')} mots` : ''}</div>
                   </div>
@@ -389,13 +391,24 @@ export default function StatsPage() {
                 </StatCard>
               )}
 
-              {rankOne && (
-                <StatCard title="LA FIQUE DE TA VIE" tape="rank #1 ✦" tapeColor="var(--primrose)" rot={0.3} color="#fff8e0">
-                  <div className="serif" style={{ fontSize: 20, color: 'var(--primrose)', marginBottom: 6 }}>#1</div>
-                  <div className="handwriting" style={{ fontSize: 20, color: 'var(--ink)', lineHeight: 1.2 }}>{rankOne.work_name}</div>
-                  {rankOne.author_name && (
-                    <div className="mono" style={{ fontSize: 9, color: 'var(--ink-mute)', marginTop: 4, letterSpacing: '.12em' }}>by {rankOne.author_name}</div>
+              {goldFic && (
+                <StatCard title="LA FIQUE DE TA VIE" tape="🥇 podium" tapeColor="var(--primrose)" rot={0.3} color="#fff8e0">
+                  <div className="serif" style={{ fontSize: 20, color: 'var(--primrose)', marginBottom: 6 }}>🥇</div>
+                  <div className="handwriting" style={{ fontSize: 20, color: 'var(--ink)', lineHeight: 1.2 }}>{goldFic.work_name}</div>
+                  {goldFic.author_name && (
+                    <div className="mono" style={{ fontSize: 9, color: 'var(--ink-mute)', marginTop: 4, letterSpacing: '.12em' }}>by {goldFic.author_name}</div>
                   )}
+                </StatCard>
+              )}
+
+              {top3Longest.length > 0 && (
+                <StatCard title="TOP 3 PLUS LONGUES" tape="roman fleuve" tapeColor="var(--yucca)" rot={-0.3} color="#f5fde8">
+                  <TopList
+                    items={top3Longest}
+                    renderLabel={f => f.work_name ?? '—'}
+                    renderSub={f => f.word_count != null ? `${f.word_count.toLocaleString('fr-FR')} mots` : ''}
+                    emptyMsg="aucune fic avec mot count…"
+                  />
                 </StatCard>
               )}
 

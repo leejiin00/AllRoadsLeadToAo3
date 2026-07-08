@@ -11,8 +11,6 @@ const BK_RATINGS = [
   { key: 'explicit', title: 'Contenu explicite',       icon: (s) => <img src={buttImg} alt="explicit" style={{ width: s, height: s, objectFit: 'contain' }} /> },
 ]
 
-const STORAGE_KEY = 'ao3_bookmarks'
-
 const TAGS = ['to read', 'en cours', 'urgent', 'un jour']
 const TAG_COLORS = {
   'to read':  'var(--primrose)',
@@ -31,10 +29,6 @@ function strHue(str = '') {
   let h = 0
   for (const c of str) h = (h * 31 + c.charCodeAt(0)) & 0xffff
   return h % 360
-}
-
-function loadBookmarks() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] }
 }
 
 function fileToBase64(file) {
@@ -192,11 +186,13 @@ function BookCard({ b, onRemove, onCoverChange, onRatingChange }) {
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function BookmarkPage() {
-  const [bookmarks, setBookmarks] = useState(loadBookmarks)
+  const [bookmarks, setBookmarks] = useState([])
+  const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({ title: '', url: '', note: '', tag: 'to read', tags: [], image: '', content_rating: null })
   const [filterRating, setFilterRating] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [session, setSession] = useState(undefined) // undefined = chargement en cours
+  const [addStatus, setAddStatus] = useState('idle') // idle|saving|error
+  const [session, setSession] = useState(undefined)
   const formImgRef = useRef()
 
   useEffect(() => {
@@ -206,8 +202,12 @@ export default function BookmarkPage() {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(bookmarks))
-  }, [bookmarks])
+    supabase.from('bookmarks').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setBookmarks(data ?? [])
+        setLoading(false)
+      })
+  }, [])
 
   async function handleFormImage(e) {
     const file = e.target.files?.[0]
@@ -217,23 +217,47 @@ export default function BookmarkPage() {
     e.target.value = ''
   }
 
-  function addBookmark() {
+  async function addBookmark() {
     if (!form.url.trim()) return
-    setBookmarks(prev => [{ ...form, id: Date.now(), date: new Date().toLocaleDateString('fr-FR') }, ...prev])
+    setAddStatus('saving')
+    const payload = {
+      title: form.title.trim() || null,
+      url:   form.url.trim(),
+      note:  form.note.trim() || null,
+      tag:   form.tag,
+      tags:  form.tags.length ? form.tags : [],
+      image: form.image || null,
+      content_rating: form.content_rating || null,
+    }
+    const { data, error } = await supabase.from('bookmarks').insert(payload).select().single()
+    if (error) { setAddStatus('error'); setTimeout(() => setAddStatus('idle'), 3000); return }
+    setBookmarks(prev => [data, ...prev])
     setForm({ title: '', url: '', note: '', tag: 'to read', tags: [], image: '', content_rating: null })
     setShowForm(false)
+    setAddStatus('idle')
   }
 
-  function setBookmarkRating(id, rating) {
-    setBookmarks(prev => prev.map(b => b.id === id ? { ...b, content_rating: rating } : b))
+  async function setBookmarkRating(id, rating) {
+    const prev = bookmarks.find(b => b.id === id)?.content_rating ?? null
+    setBookmarks(bms => bms.map(b => b.id === id ? { ...b, content_rating: rating } : b))
+    const { error } = await supabase.from('bookmarks').update({ content_rating: rating }).eq('id', id)
+    if (error) setBookmarks(bms => bms.map(b => b.id === id ? { ...b, content_rating: prev } : b))
   }
 
-  function remove(id) {
+  async function remove(id) {
     setBookmarks(prev => prev.filter(b => b.id !== id))
+    const { error } = await supabase.from('bookmarks').delete().eq('id', id)
+    if (error) {
+      alert(`Erreur suppression : ${error.message}`)
+      const { data } = await supabase.from('bookmarks').select('*').order('created_at', { ascending: false })
+      if (data) setBookmarks(data)
+    }
   }
 
-  function changeCover(id, b64) {
+  async function changeCover(id, b64) {
     setBookmarks(prev => prev.map(b => b.id === id ? { ...b, image: b64 } : b))
+    const { error } = await supabase.from('bookmarks').update({ image: b64 }).eq('id', id)
+    if (error) console.error('Erreur mise à jour cover:', error.message)
   }
 
   const visibleBookmarks = filterRating
@@ -348,16 +372,40 @@ export default function BookmarkPage() {
                 </div>
                 <input ref={formImgRef} type="file" accept=".png,.jpg,.jpeg,.webp" onChange={handleFormImage} style={{ display: 'none' }} />
               </div>
-            </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 22 }}>
-              <button onClick={addBookmark} className="btn-stamp">ajouter ✦</button>
+              {/* Contenu sexuel */}
+              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>CONTENU</div>
+                {[['no_sex','✿ No Sex'],['vanilla','🍑 Vanilla'],['explicit','🌶 Explicit']].map(([val, lbl]) => (
+                  <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 16 }}>
+                    <input type="radio" name="bk_content" checked={form.content_rating === val}
+                      onChange={() => setForm(f => ({ ...f, content_rating: val }))}
+                      style={{ width: 13, height: 13, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
+                    {lbl}
+                  </label>
+                ))}
+                {form.content_rating && (
+                  <button type="button" onClick={() => setForm(f => ({ ...f, content_rating: null }))}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-mute)', padding: 0 }}>
+                    × effacer
+                  </button>
+                )}
+              </div>
+            </div>{/* fin grid */}
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginTop: 22 }}>
+              {addStatus === 'error' && (
+                <span className="mono" style={{ fontSize: 9, letterSpacing: '.15em', color: 'var(--primrose)' }}>✕ erreur — réessaie</span>
+              )}
+              <button onClick={addBookmark} className="btn-stamp" disabled={addStatus === 'saving'}>
+                {addStatus === 'saving' ? '⟳ …' : 'ajouter ✦'}
+              </button>
             </div>
           </div>
         )}
 
         {/* Liste vide */}
-        {bookmarks.length === 0 && (
+        {!loading && bookmarks.length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px 0' }}>
             <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 20 }}>
               <Doodle kind="flower" size={44} color="var(--pinktone)" />

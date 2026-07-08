@@ -4,10 +4,10 @@ import { Page, Header, Tape, BloodDrop, StarMark, FloralCluster, Doodle, Sticker
 import { supabase } from '../lib/supabase'
 import TagInput from '../components/TagInput'
 import ImageUpload from '../components/ImageUpload'
-import { IconicPoseOverlay } from '../components/SpriteAnimation'
 import HigurumaMascot from '../components/HigurumaMascot'
-import iconicPose from '../assets/HigurumaIconicPose.png'
 import buttImg from '../assets/butt.png'
+import { strHue, ficEnding, parseIntField, ENDING_LABEL, ENDING_COLOR, MEDAL_ICON, ROLE_LABEL } from '../lib/utils'
+import { useAuth } from '../lib/AuthContext'
 
 import fi1   from '../assets/foldericon/1.png'
 import fi1f  from '../assets/foldericon/1f.png'
@@ -36,23 +36,9 @@ function folderIcon(name) {
 const TAPE_KINDS = ['check', 'dots', 'clean', 'grid']
 const ROTS = [-3, 2, -2, 3, -1, 1]
 
-function strHue(str = '') {
-  let h = 0
-  for (const c of str) h = (h * 31 + c.charCodeAt(0)) & 0xffff
-  return h % 360
-}
-
 function cardGradient(name) {
   const h = strHue(name)
   return `linear-gradient(160deg, hsl(${h},52%,80%), hsl(${(h + 45) % 360},48%,55%))`
-}
-
-const ENDING_LABEL = { happy: 'happy end ✿', bad: 'bad end', open: 'open end' }
-
-function ficEnding(fic) {
-  if (fic.good_ending && !fic.bad_ending) return 'happy'
-  if (fic.bad_ending && !fic.good_ending) return 'bad'
-  return 'open'
 }
 
 // ── Dossier univers ────────────────────────────────────────────────────────────
@@ -230,12 +216,10 @@ function BookCover({ fic, onCoverChange, onRatingChange, canEdit }) {
 }
 
 // ── Carte polaroid (vue intérieure univers) ────────────────────────────────────
-function FicCard({ fic, i, onRatingChange, canEdit }) {
+function FicCard({ fic, i, onRatingChange, canEdit, onTagClick, activeTag, onEdit }) {
   const tapeKind = TAPE_KINDS[i % TAPE_KINDS.length]
   const rot = ROTS[i % ROTS.length]
   const tags = fic.tags ?? []
-  const shown = tags.slice(0, 2)
-  const extra = tags.length - shown.length
   const bg = fic.image_url
     ? { backgroundImage: `url(${fic.image_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
     : { background: cardGradient(fic.universe_name) }
@@ -246,10 +230,13 @@ function FicCard({ fic, i, onRatingChange, canEdit }) {
         <div style={{ position: 'relative', height: 320, display: 'flex', justifyContent: 'center' }}>
           <Tape kind={tapeKind} color={i % 2 === 0 ? 'var(--primrose)' : 'var(--lime)'} rot={i % 2 === 0 ? -8 : 6}
             style={{ top: -10, left: 30, fontSize: 11, padding: '4px 12px' }}>
-            {shown[0] ?? '—'}{extra > 0 ? ` +${extra}` : shown[1] ? ` · ${shown[1]}` : ''}
+            {fic.ship_name ?? fic.work_name ?? '—'}
           </Tape>
           <div style={{ transform: `rotate(${rot}deg)`, background: '#fffaf0', padding: '10px 10px 14px', width: 230, boxShadow: '0 12px 24px rgba(60,40,20,.18), 0 2px 0 rgba(0,0,0,.04)' }}>
             <div style={{ width: '100%', height: 170, ...bg, position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', padding: 10 }}>
+              {fic.medal && (
+                <span style={{ position: 'absolute', top: 6, left: 8, fontSize: 20 }}>{MEDAL_ICON[fic.medal]}</span>
+              )}
               <span className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'rgba(255,250,240,.92)', background: 'rgba(0,0,0,.28)', padding: '3px 6px' }}>
                 {(fic.universe_name ?? '—').toUpperCase()}
               </span>
@@ -264,9 +251,11 @@ function FicCard({ fic, i, onRatingChange, canEdit }) {
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 6 }}>
-                <span className="mono" style={{ fontSize: 11, color: 'var(--primrose)', letterSpacing: 1 }}>
-                  {fic.rank != null ? `#${fic.rank}` : ''}
-                </span>
+                {(fic.top_char || fic.bottom_char) ? (
+                  <span className="mono" style={{ fontSize: 7, letterSpacing: '.1em', color: 'var(--ink-mute)', background: 'rgba(29,26,22,.07)', padding: '1px 5px', borderRadius: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>
+                    {[fic.top_char && `▲ ${fic.top_char}`, fic.bottom_char && `▼ ${fic.bottom_char}`].filter(Boolean).join(' / ')}
+                  </span>
+                ) : <span />}
                 <span className="mono" style={{ fontSize: 8, letterSpacing: '.15em', color: 'var(--ink-mute)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                   {ficEnding(fic) === 'bad' ? <BloodDrop size={9} /> : ficEnding(fic) === 'open' ? <StarMark size={9} /> : null}
                   {ENDING_LABEL[ficEnding(fic)]}
@@ -302,6 +291,36 @@ function FicCard({ fic, i, onRatingChange, canEdit }) {
           )
         })}
       </div>
+
+      {/* Tags cliquables — 2 visibles + +X pour le reste */}
+      {tags.length > 0 && (
+        <div style={{ display: 'flex', gap: 4, marginTop: 6, maxWidth: 230, justifyContent: 'center', flexWrap: 'nowrap' }}>
+          {tags.slice(0, 2).map(t => (
+            <button key={t} onClick={() => onTagClick?.(t)}
+              style={{
+                background: activeTag === t ? 'var(--ink)' : 'var(--pinktone)',
+                color: activeTag === t ? 'var(--paper)' : 'var(--ink)',
+                border: 'none', borderRadius: 2, padding: '1px 7px',
+                fontFamily: 'var(--f-hand)', fontSize: 12, cursor: 'pointer',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 90,
+                transition: 'background .15s, color .15s',
+              }}>
+              {t}
+            </button>
+          ))}
+          {tags.length > 2 && (
+            <span style={{
+              background: 'rgba(29,26,22,.08)', color: 'var(--ink-mute)',
+              borderRadius: 2, padding: '1px 7px',
+              fontFamily: 'var(--f-mono)', fontSize: 10, whiteSpace: 'nowrap',
+              display: 'inline-flex', alignItems: 'center',
+            }}>
+              +{tags.length - 2}
+            </span>
+          )}
+        </div>
+      )}
+
     </div>
   )
 }
@@ -312,13 +331,9 @@ const PAGE_SIZE = 20
 const EMPTY_FIC = {
   work_name: '', author_name: '', universe_name: '', ships: [], link: '', image_url: '',
   summary: '', my_review: '', tags: [],
-  rank: '', rating: '', word_count: '', chapter_count: '', read_count: '',
+  rating: '', word_count: '', chapter_count: '', read_count: '',
   good_ending: false, bad_ending: false, content_rating: '',
-}
-
-function parseIntField(val) {
-  const cleaned = String(val ?? '').replace(/[\s,.]/g, '')
-  return parseInt(cleaned) || null
+  top_char: '', bottom_char: '', medal: '', completed: false,
 }
 
 function buildPayload(fic) {
@@ -332,14 +347,17 @@ function buildPayload(fic) {
     summary:       fic.summary.trim()       || null,
     my_review:     fic.my_review.trim()     || null,
     tags:          fic.tags.length ? fic.tags : null,
-    rank:          parseIntField(fic.rank),
     rating:        parseFloat(String(fic.rating).replace(',', '.')) || null,
+    top_char:      fic.top_char?.trim()    || null,
+    bottom_char:   fic.bottom_char?.trim() || null,
+    medal:         fic.medal || null,
     word_count:    parseIntField(fic.word_count),
     chapter_count: parseIntField(fic.chapter_count),
     read_count:    parseIntField(fic.read_count),
     good_ending:   fic.good_ending,
     bad_ending:    fic.bad_ending,
     content_rating: fic.content_rating || null,
+    completed:     fic.completed ?? false,
   }
 }
 
@@ -405,7 +423,6 @@ function FicForm({ state, setState, onSubmit, status, submitLabel, tapeLabel, ta
           <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>IMAGE DE COUVERTURE</div>
           <ImageUpload value={state.image_url} onChange={url => setState(f => ({ ...f, image_url: url }))} bucket="fanfiction-covers" />
         </div>
-        {field(state, setState, 'rank',          'RANK (1–500)',   { placeholder: '42' })}
         {field(state, setState, 'rating',        'NOTE',           { placeholder: '8.5' })}
         {field(state, setState, 'word_count',    'NOMBRE DE MOTS', { placeholder: '94 300' })}
         {field(state, setState, 'chapter_count', 'CHAPITRES',      { placeholder: '22' })}
@@ -454,6 +471,49 @@ function FicForm({ state, setState, onSubmit, status, submitLabel, tapeLabel, ta
             </button>
           )}
         </div>
+        {/* Médaille (podium) */}
+        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>MÉDAILLE</div>
+          {[['gold','🥇 Or'], ['silver','🥈 Argent'], ['bronze','🥉 Bronze']].map(([val, lbl]) => (
+            <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 18 }}>
+              <input type="radio" name="medal" checked={state.medal === val}
+                onChange={() => setState(f => ({ ...f, medal: f.medal === val ? '' : val }))}
+                onClick={() => state.medal === val && setState(f => ({ ...f, medal: '' }))}
+                style={{ width: 15, height: 15, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
+              {lbl}
+            </label>
+          ))}
+        </div>
+
+        {/* Terminée */}
+        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>TERMINÉE</div>
+          <span className="handwriting" style={{ fontSize: 16, color: 'var(--ink-mute)', opacity: state.completed ? 0.4 : 1, transition: 'opacity .2s' }}>non</span>
+          <button type="button"
+            onClick={() => setState(f => ({ ...f, completed: !f.completed }))}
+            style={{
+              width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', padding: 0,
+              background: state.completed ? 'var(--lime-d)' : 'rgba(29,26,22,.15)',
+              transition: 'background .2s', position: 'relative', flexShrink: 0,
+            }}>
+            <div style={{
+              position: 'absolute', top: 4, left: state.completed ? 22 : 4,
+              width: 14, height: 14, borderRadius: '50%',
+              background: 'white', transition: 'left .2s',
+              boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+            }} />
+          </button>
+          <span className="handwriting" style={{ fontSize: 16, color: 'var(--lime-d)', opacity: state.completed ? 1 : 0.4, transition: 'opacity .2s' }}>oui</span>
+        </div>
+
+        {/* Top / Bottom — visible uniquement si contenu sexuel */}
+        {(state.content_rating === 'vanilla' || state.content_rating === 'explicit') && (
+          <>
+            {field(state, setState, 'top_char',    '▲ TOP',    { placeholder: 'personnage top…' })}
+            {field(state, setState, 'bottom_char', '▼ BOTTOM', { placeholder: 'personnage bottom…' })}
+          </>
+        )}
+
         {field(state, setState, 'summary',   'RÉSUMÉ',    { full: true, textarea: true, placeholder: 'résumé de la fic…' })}
         {field(state, setState, 'my_review', 'MA REVIEW', { full: true, textarea: true, placeholder: 'mes impressions…', dotted: true })}
       </div>
@@ -474,31 +534,32 @@ function FicForm({ state, setState, onSubmit, status, submitLabel, tapeLabel, ta
 
 export default function GalleryPage() {
   const location = useLocation()
-  const [showHiguruma,      setShowHiguruma]      = useState(false)
+  const session = useAuth()
   const [fics,              setFics]              = useState([])
   const [loading,           setLoading]           = useState(true)
   const [error,             setError]             = useState(null)
   const [selectedUniverse,  setSelectedUniverse]  = useState(null)
   const [search,            setSearch]            = useState('')
-  const [sortRank,          setSortRank]          = useState(null)
+  const [globalSearch,      setGlobalSearch]      = useState('')
+  const [showAllFics,       setShowAllFics]       = useState(false)
   const [sortRating,        setSortRating]        = useState(null)
   const [filterRating,      setFilterRating]      = useState(null)
   const [filterNoteMin,     setFilterNoteMin]     = useState(null)
   const [filterNoteMax,     setFilterNoteMax]     = useState(null)
-  const [filterRankMin,     setFilterRankMin]     = useState(null)
-  const [filterRankMax,     setFilterRankMax]     = useState(null)
   const [openFilter,        setOpenFilter]        = useState(null)
+  const [filterTag,         setFilterTag]         = useState(null)
+  const [filterEnding,      setFilterEnding]      = useState(null)
+  const [filterShip,        setFilterShip]        = useState(null)
+  const [filterCompleted,   setFilterCompleted]   = useState(null)
   const [page,              setPage]              = useState(1)
-  const [session,           setSession]           = useState(undefined)
   const [showAddForm,       setShowAddForm]       = useState(false)
   const [newFic,            setNewFic]            = useState(EMPTY_FIC)
   const [addStatus,         setAddStatus]         = useState('idle')
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
-    return () => subscription.unsubscribe()
-  }, [])
+  const [editId,            setEditId]            = useState(null)
+  const [editFic,           setEditFic]           = useState(EMPTY_FIC)
+  const [editStatus,        setEditStatus]        = useState('idle')
+  const [filterTopChar,     setFilterTopChar]     = useState(null)
+  const [filterBottomChar,  setFilterBottomChar]  = useState(null)
 
   useEffect(() => {
     supabase.from('fanfictions').select('*').order('created_at', { ascending: false })
@@ -511,7 +572,7 @@ export default function GalleryPage() {
         }
         setLoading(false)
       })
-  }, [])
+  }, [location])
 
   async function addFic() {
     if (!newFic.work_name.trim()) return
@@ -552,8 +613,12 @@ export default function GalleryPage() {
     if (filterRating && fic.content_rating !== filterRating) return false
     if (filterNoteMin !== null && (fic.rating ?? -Infinity) < filterNoteMin) return false
     if (filterNoteMax !== null && (fic.rating ?? Infinity) > filterNoteMax) return false
-    if (filterRankMin !== null && (fic.rank ?? Infinity) < filterRankMin) return false
-    if (filterRankMax !== null && (fic.rank ?? Infinity) > filterRankMax) return false
+    if (filterTag && !(fic.tags ?? []).includes(filterTag)) return false
+    if (filterEnding && ficEnding(fic) !== filterEnding) return false
+    if (filterShip && fic.ship_name !== filterShip) return false
+    if (filterCompleted !== null && Boolean(fic.completed) !== filterCompleted) return false
+    if (filterTopChar && fic.top_char !== filterTopChar) return false
+    if (filterBottomChar && fic.bottom_char !== filterBottomChar) return false
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -564,10 +629,6 @@ export default function GalleryPage() {
     )
   })
   const sorted = [...filtered].sort((a, b) => {
-    if (sortRank) {
-      const ar = a.rank ?? Infinity, br = b.rank ?? Infinity
-      if (ar !== br) return sortRank === 'asc' ? ar - br : br - ar
-    }
     if (sortRating) {
       const ar = a.rating ?? -Infinity, br = b.rating ?? -Infinity
       if (ar !== br) return sortRating === 'asc' ? ar - br : br - ar
@@ -578,18 +639,37 @@ export default function GalleryPage() {
   const safePage   = Math.min(page, totalPages)
   const paginated  = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
-  // Fics bookmarkées
+  // Tags et ships uniques de l'univers sélectionné (pour filtres)
+  const universeTags = [...new Set(universeFics.flatMap(f => f.tags ?? []))].sort()
+  const universeShips = [...new Set(universeFics.map(f => f.ship_name).filter(Boolean))].sort()
+
+  // Toutes les fics filtrées (recherche globale)
+  const globalFiltered = fics.filter(fic => {
+    if (!globalSearch) return true
+    const q = globalSearch.toLowerCase()
+    return (
+      fic.work_name?.toLowerCase().includes(q) ||
+      fic.author_name?.toLowerCase().includes(q) ||
+      fic.ship_name?.toLowerCase().includes(q) ||
+      (fic.tags ?? []).some(t => t.toLowerCase().includes(q)) ||
+      fic.universe_name?.toLowerCase().includes(q)
+    )
+  })
+  const globalTotalPages = Math.max(1, Math.ceil(globalFiltered.length / PAGE_SIZE))
+  const globalSafePage   = Math.min(page, globalTotalPages)
+  const globalPaginated  = globalFiltered.slice((globalSafePage - 1) * PAGE_SIZE, globalSafePage * PAGE_SIZE)
 
   function openUniverse(name) {
     setSelectedUniverse(name)
     setSearch('')
-    setSortRank(null)
     setSortRating(null)
     setFilterRating(null)
     setFilterNoteMin(null)
     setFilterNoteMax(null)
-    setFilterRankMin(null)
-    setFilterRankMax(null)
+    setFilterEnding(null)
+    setFilterShip(null)
+    setFilterTag(null)
+    setFilterCompleted(null)
     setOpenFilter(null)
     setPage(1)
   }
@@ -609,18 +689,82 @@ export default function GalleryPage() {
     }
   }
 
+  function startEdit(f) {
+    setEditId(f.id)
+    setEditFic({
+      work_name:     f.work_name     ?? '',
+      author_name:   f.author_name   ?? '',
+      universe_name: f.universe_name ?? '',
+      ships:         f.ship_name ? f.ship_name.split(' & ') : [],
+      link:          f.link          ?? '',
+      image_url:     f.image_url     ?? '',
+      summary:       f.summary       ?? '',
+      my_review:     f.my_review     ?? '',
+      tags:          f.tags          ?? [],
+      rating:        f.rating != null ? String(f.rating) : '',
+      word_count:    f.word_count    != null ? String(f.word_count)    : '',
+      chapter_count: f.chapter_count != null ? String(f.chapter_count) : '',
+      read_count:    f.read_count    != null ? String(f.read_count)    : '',
+      good_ending:   f.good_ending   ?? false,
+      bad_ending:    f.bad_ending    ?? false,
+      content_rating: f.content_rating ?? '',
+      top_char:      f.top_char     ?? '',
+      bottom_char:   f.bottom_char  ?? '',
+      medal:         f.medal        ?? '',
+      completed:     f.completed    ?? false,
+    })
+    setShowAddForm(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function saveEdit() {
+    setEditStatus('saving')
+    const { data, error } = await supabase.from('fanfictions').update(buildPayload(editFic)).eq('id', editId).select().single()
+    if (!error) {
+      setFics(prev => prev.map(f => f.id === editId ? data : f))
+      setEditId(null)
+    }
+    setEditStatus(error ? 'error' : 'saved')
+    setTimeout(() => setEditStatus('idle'), 2500)
+  }
+
   function backToFolders() {
     setSelectedUniverse(null)
     setSearch('')
-    setSortRank(null)
     setSortRating(null)
     setFilterRating(null)
     setFilterNoteMin(null)
     setFilterNoteMax(null)
-    setFilterRankMin(null)
-    setFilterRankMax(null)
+    setFilterEnding(null)
+    setFilterShip(null)
+    setFilterTag(null)
+    setFilterCompleted(null)
     setOpenFilter(null)
     setPage(1)
+  }
+
+  // Pagination globale (helper de rendu)
+  function renderPagination(currentPage, numPages, onSetPage) {
+    if (numPages <= 1) return null
+    const safeP = Math.min(currentPage, numPages)
+    return (
+      <div style={{ marginTop: 48, display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.22em', color: 'var(--ink)' }}>
+        <button onClick={() => onSetPage(p => Math.max(1, p - 1))} disabled={safeP === 1}
+          style={{ background: 'none', border: 'none', cursor: safeP === 1 ? 'default' : 'pointer', opacity: safeP === 1 ? .3 : 1, fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.22em', color: 'var(--ink)', padding: 0 }}>
+          ← prev
+        </button>
+        {Array.from({ length: numPages }, (_, i) => i + 1).map(n => (
+          <button key={n} onClick={() => onSetPage(n)}
+            style={{ width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: n === safeP ? 'var(--ink)' : 'transparent', color: n === safeP ? 'var(--paper)' : 'var(--ink)', border: n === safeP ? 'none' : '1.4px solid var(--ink)', cursor: 'pointer', fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.1em' }}>
+            {n}
+          </button>
+        ))}
+        <button onClick={() => onSetPage(p => Math.min(numPages, p + 1))} disabled={safeP === numPages}
+          style={{ background: 'none', border: 'none', cursor: safeP === numPages ? 'default' : 'pointer', opacity: safeP === numPages ? .3 : 1, fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.22em', color: 'var(--ink)', padding: 0 }}>
+          next →
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -670,123 +814,254 @@ export default function GalleryPage() {
               </div>
             )}
 
-            {/* Compteur + tri + filtre rating (vue intérieure) */}
-            {selectedUniverse && (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', paddingBottom: 8, flexWrap: 'wrap' }}>
-                <span className="mono" style={{ fontSize: 10, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>
-                  {sorted.length} fic{sorted.length !== 1 ? 's' : ''}
-                </span>
-                {[
-                  {
-                    key: 'rank', label: 'rank',
-                    sort: sortRank, setSort: setSortRank,
-                    min: filterRankMin, setMin: setFilterRankMin,
-                    max: filterRankMax, setMax: setFilterRankMax,
-                    minBound: 1, maxBound: 9999, step: 1,
-                  },
-                  {
-                    key: 'note', label: 'note',
-                    sort: sortRating, setSort: setSortRating,
-                    min: filterNoteMin, setMin: setFilterNoteMin,
-                    max: filterNoteMax, setMax: setFilterNoteMax,
-                    minBound: 0, maxBound: 10, step: 0.5,
-                  },
-                ].map(({ key, label, sort, setSort, min, setMin, max, setMax, minBound, maxBound, step }) => {
-                  const hasFilter = min !== null || max !== null
-                  const active = sort || hasFilter
-                  return (
-                    <div key={key} style={{ position: 'relative' }}>
-                      <button
-                        onClick={() => setOpenFilter(p => p === key ? null : key)}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 11px',
-                          fontFamily: 'var(--f-hand)', fontSize: 14,
-                          background: active ? 'var(--ink)' : 'var(--pinktone)',
-                          color: active ? 'var(--paper)' : 'var(--ink)',
-                          border: 'none', borderRadius: 2, cursor: 'pointer',
-                          opacity: active ? 1 : .78, transition: 'all .15s',
-                        }}>
-                        {label} {sort === 'asc' ? '↑' : sort === 'desc' ? '↓' : hasFilter ? '⊙' : '↕'}
-                      </button>
+            {/* Compteur + filtres compacts (vue intérieure) */}
+            {selectedUniverse && (() => {
+              // Mise à jour de moreActive pour inclure les nouveaux filtres
+              const moreActive = sortRating || filterNoteMin !== null || filterNoteMax !== null || filterEnding || filterShip || filterCompleted !== null || filterTopChar || filterBottomChar
+              const anyActive = filterRating || filterTag || moreActive
 
-                      {openFilter === key && (
-                        <div style={{
-                          position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 20,
-                          background: '#fffaf0', border: '1.4px solid rgba(29,26,22,.18)',
-                          borderRadius: 6, padding: '12px 14px', minWidth: 190,
-                          boxShadow: '0 8px 24px rgba(0,0,0,.13)',
-                          display: 'flex', flexDirection: 'column', gap: 10,
-                        }}>
-                          <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>
-                            TRI
-                          </div>
-                          <div style={{ display: 'flex', gap: 5 }}>
-                            {[['asc', '↑ croissant'], ['desc', '↓ décroissant']].map(([val, lbl]) => (
-                              <button key={val}
-                                onClick={() => { setSort(p => p === val ? null : val); setPage(1) }}
+              return (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingBottom: 8, flexWrap: 'wrap' }}>
+                  <span className="mono" style={{ fontSize: 10, letterSpacing: '.2em', color: 'var(--ink-mute)', marginRight: 2 }}>
+                    {sorted.length} fic{sorted.length !== 1 ? 's' : ''}
+                  </span>
+
+                  {/* Rating circles — toujours visibles */}
+                  {RATINGS.map(r => (
+                    <button key={r.key} title={r.title}
+                      onClick={() => { setFilterRating(p => p === r.key ? null : r.key); setPage(1) }}
+                      style={{
+                        width: 28, height: 28, borderRadius: '50%', padding: 3,
+                        border: filterRating === r.key ? '2px solid var(--ink)' : '1.5px solid rgba(29,26,22,.2)',
+                        background: filterRating === r.key ? 'rgba(255,250,240,.98)' : 'rgba(255,250,240,.6)',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        boxShadow: filterRating === r.key ? '0 2px 8px rgba(0,0,0,.18)' : 'none',
+                        opacity: filterRating && filterRating !== r.key ? 0.35 : 1,
+                        transition: 'all .15s',
+                      }}>
+                      {r.icon(14)}
+                    </button>
+                  ))}
+
+                  {/* Chips actifs : tag, ending, ship */}
+                  {[
+                    filterTag    && { label: filterTag,                          clear: () => { setFilterTag(null);    setPage(1) } },
+                    filterEnding && { label: ENDING_LABEL[filterEnding],         clear: () => { setFilterEnding(null); setPage(1) } },
+                    filterShip   && { label: filterShip,                         clear: () => { setFilterShip(null);   setPage(1) } },
+                  ].filter(Boolean).map((chip, i) => (
+                    <span key={i} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      padding: '2px 8px', fontFamily: 'var(--f-hand)', fontSize: 13,
+                      background: 'var(--ink)', color: 'var(--paper)', borderRadius: 2,
+                    }}>
+                      {chip.label}
+                      <button onClick={chip.clear}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--paper)', padding: 0, lineHeight: 1, fontSize: 14 }}>×</button>
+                    </span>
+                  ))}
+
+                  {/* Bouton + pour les filtres supplémentaires */}
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      onClick={() => setOpenFilter(p => p ? null : 'more')}
+                      style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        border: moreActive ? '2px solid var(--ink)' : '1.5px solid rgba(29,26,22,.2)',
+                        background: moreActive ? 'var(--ink)' : 'rgba(255,250,240,.6)',
+                        color: moreActive ? 'var(--paper)' : 'var(--ink)',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontFamily: 'var(--f-mono)', fontSize: 16, lineHeight: 1,
+                        transition: 'all .15s',
+                      }}>
+                      {openFilter === 'more' ? '−' : '+'}
+                    </button>
+
+                    {openFilter === 'more' && (
+                      <div style={{
+                        position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 20,
+                        background: '#fffaf0', border: '1.4px solid rgba(29,26,22,.18)',
+                        borderRadius: 6, padding: '14px 16px', minWidth: 200,
+                        boxShadow: '0 8px 24px rgba(0,0,0,.13)',
+                        display: 'flex', flexDirection: 'column', gap: 14,
+                      }}>
+
+                        {/* Terminée */}
+                        <div>
+                          <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>TERMINÉE</div>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {[[true, 'oui ✓'], [false, 'non…']].map(([val, lbl]) => (
+                              <button key={String(val)}
+                                onClick={() => { setFilterCompleted(p => p === val ? null : val); setPage(1) }}
                                 style={{
-                                  flex: 1, padding: '5px 8px',
-                                  fontFamily: 'var(--f-hand)', fontSize: 13,
-                                  background: sort === val ? 'var(--ink)' : 'transparent',
-                                  color: sort === val ? 'var(--paper)' : 'var(--ink)',
+                                  flex: 1, padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13,
+                                  background: filterCompleted === val ? 'var(--ink)' : 'transparent',
+                                  color: filterCompleted === val ? 'var(--paper)' : 'var(--ink)',
                                   border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer',
                                   transition: 'all .12s',
                                 }}>{lbl}</button>
                             ))}
                           </div>
+                        </div>
 
+                        {/* Conteneur global pour espacer chaque groupe de filtres uniformément */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                          {/* Ending */}
                           <div>
-                            <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>
-                              INTERVALLE
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <input type="number" min={minBound} max={maxBound} step={step}
-                                value={min ?? ''}
-                                placeholder={String(minBound)}
-                                onChange={e => { setMin(e.target.value === '' ? null : Number(e.target.value)); setPage(1) }}
-                                style={{ width: 58, background: 'transparent', border: 'none', borderBottom: '1.2px solid var(--ink)', fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink)', outline: 'none', textAlign: 'center', padding: '2px 0' }} />
-                              <span className="mono" style={{ fontSize: 10, color: 'var(--ink-mute)' }}>—</span>
-                              <input type="number" min={minBound} max={maxBound} step={step}
-                                value={max ?? ''}
-                                placeholder={String(maxBound)}
-                                onChange={e => { setMax(e.target.value === '' ? null : Number(e.target.value)); setPage(1) }}
-                                style={{ width: 58, background: 'transparent', border: 'none', borderBottom: '1.2px solid var(--ink)', fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink)', outline: 'none', textAlign: 'center', padding: '2px 0' }} />
+                            <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>ENDING</div>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {[['happy', 'happy end ✿'], ['bad', 'bad end'], ['open', 'open end']].map(([val, lbl]) => (
+                                <button key={val}
+                                  onClick={() => { setFilterEnding(p => p === val ? null : val); setPage(1); }}
+                                  style={{
+                                    padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13,
+                                    background: filterEnding === val ? 'var(--ink)' : 'transparent',
+                                    color: filterEnding === val ? 'var(--paper)' : 'var(--ink)',
+                                    border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer',
+                                    transition: 'all .12s',
+                                  }}>{lbl}</button>
+                              ))}
                             </div>
                           </div>
 
-                          {active && (
+                          {/* Ship (si plusieurs dans cet univers) */}
+                          {universeShips && universeShips.length > 1 && (
+                            <div>
+                              <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>SHIP</div>
+                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                {universeShips.map(s => (
+                                  <button key={s}
+                                    onClick={() => { setFilterShip(p => p === s ? null : s); setPage(1); }}
+                                    style={{
+                                      padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13,
+                                      background: filterShip === s ? 'var(--ink)' : 'transparent',
+                                      color: filterShip === s ? 'var(--paper)' : 'var(--ink)',
+                                      border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer',
+                                      transition: 'all .12s',
+                                    }}>{s}</button>
+                                ))}
+                              </div>
+                            </div>
+                          )}  
+
+                          {/* Top / Bottom — on se base sur filterRating et non state.content_rating */}
+                          {(filterRating === 'vanilla' || filterRating === 'explicit') && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              
+                              {/* Filtre TOP */}
+                              <div>
+                                <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>▲ TOP</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                  {['Dabi', 'Hawks'].map((char) => (
+                                    <button key={char}
+                                      onClick={() => { setFilterTopChar(p => p === char ? null : char); setPage(1); }}
+                                      style={{
+                                        flex: 1, padding: '3px 9px',
+                                        fontFamily: 'var(--f-hand)', fontSize: 13,
+                                        background: filterTopChar === char ? 'var(--ink)' : 'transparent',
+                                        color: filterTopChar === char ? 'var(--paper)' : 'var(--ink)',
+                                        border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer',
+                                        transition: 'all .12s',
+                                      }}
+                                    >{char}</button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Filtre BOTTOM */}
+                              <div>
+                                <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>▼ BOTTOM</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                  {['Dabi', 'Hawks'].map((char) => (
+                                    <button key={char}
+                                      onClick={() => { setFilterBottomChar(p => p === char ? null : char); setPage(1); }}
+                                      style={{
+                                        flex: 1, padding: '3px 9px',
+                                        fontFamily: 'var(--f-hand)', fontSize: 13,
+                                        background: filterBottomChar === char ? 'var(--ink)' : 'transparent',
+                                        color: filterBottomChar === char ? 'var(--paper)' : 'var(--ink)',
+                                        border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer',
+                                        transition: 'all .12s',
+                                      }}
+                                    >{char}</button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Note */}
+                          <div>
+                            <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>TRI PAR NOTE</div>
+                            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+                              {[['asc', '↑ asc.'], ['desc', '↓ desc.']].map(([val, lbl]) => (
+                                <button key={val}
+                                  onClick={() => { setSortRating(p => p === val ? null : val); setPage(1); }}
+                                  style={{
+                                    flex: 1, padding: '3px 9px',
+                                    fontFamily: 'var(--f-hand)', fontSize: 13,
+                                    background: sortRating === val ? 'var(--ink)' : 'transparent',
+                                    color: sortRating === val ? 'var(--paper)' : 'var(--ink)',
+                                    border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer',
+                                    transition: 'all .12s',
+                                  }}>{lbl}</button>
+                              ))}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <input type="number" min={0} max={10} step={0.5}
+                                value={filterNoteMin ?? ''} placeholder="0"
+                                onChange={e => { setFilterNoteMin(e.target.value === '' ? null : Number(e.target.value)); setPage(1); }}
+                                style={{ width: 48, background: 'transparent', border: 'none', borderBottom: '1.2px solid var(--ink)', fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink)', outline: 'none', textAlign: 'center', padding: '2px 0' }} />
+                              <span className="mono" style={{ fontSize: 10, color: 'var(--ink-mute)' }}>—</span>
+                              <input type="number" min={0} max={10} step={0.5}
+                                value={filterNoteMax ?? ''} placeholder="10"
+                                onChange={e => { setFilterNoteMax(e.target.value === '' ? null : Number(e.target.value)); setPage(1); }}
+                                style={{ width: 48, background: 'transparent', border: 'none', borderBottom: '1.2px solid var(--ink)', fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink)', outline: 'none', textAlign: 'center', padding: '2px 0' }} />
+                            </div>
+                          </div>
+
+                          {/* Bouton Effacer */}
+                          {moreActive && (
                             <button
-                              onClick={() => { setSort(null); setMin(null); setMax(null); setPage(1) }}
-                              style={{ fontFamily: 'var(--f-hand)', fontSize: 12, color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                              onClick={() => { 
+                                setSortRating(null); 
+                                setFilterNoteMin(null); 
+                                setFilterNoteMax(null); 
+                                setFilterEnding(null); 
+                                setFilterShip(null); 
+                                setFilterCompleted(null); 
+                                setFilterTopChar(null);
+                                setFilterBottomChar(null);
+                                setPage(1); 
+                              }}
+                              style={{ fontFamily: 'var(--f-hand)', fontSize: 12, color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, marginTop: 4 }}>
                               ✕ effacer
                             </button>
                           )}
+
                         </div>
-                      )}
-                    </div>
-                  )
-                })}
-                {/* Filtres content rating */}
-                <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginLeft: 4 }}>
-                  {RATINGS.map(r => (
-                    <button key={r.key} title={r.title}
-                      onClick={() => { setFilterRating(p => p === r.key ? null : r.key); setPage(1) }}
-                      style={{
-                        width: 30, height: 30, borderRadius: '50%', padding: 4,
-                        border: filterRating === r.key ? '2px solid var(--ink)' : '1.5px solid rgba(29,26,22,.2)',
-                        background: filterRating === r.key ? 'rgba(255,250,240,.98)' : 'rgba(255,250,240,.6)',
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        boxShadow: filterRating === r.key ? '0 2px 8px rgba(0,0,0,.18)' : 'none',
-                        opacity: filterRating && filterRating !== r.key ? 0.4 : 1,
-                        transition: 'all .15s',
-                      }}>
-                      {r.icon(16)}
+                      </div>
+                    )}
+                  </div> {/* Fin du div relative du bouton + */}
+
+                  {/* Tout effacer */}
+                  {anyActive && (
+                    <button
+                      onClick={() => { 
+                        setFilterRating(null); setFilterNoteMin(null); setFilterNoteMax(null); 
+                        setSortRating(null); setFilterTag(null); setFilterEnding(null); 
+                        setFilterShip(null); setFilterCompleted(null); 
+                        setFilterTopChar(null); setFilterBottomChar(null);
+                        setOpenFilter(null); setPage(1) 
+                      }}
+                      style={{ fontFamily: 'var(--f-hand)', fontSize: 12, color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', marginLeft: 2 }}>
+                      ✕ tout effacer
                     </button>
-                  ))}
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
+              )
+            })()}
+            </div> {/*
 
           {/* ── Formulaire ajout fic ── */}
           {showAddForm && session && (
@@ -799,6 +1074,26 @@ export default function GalleryPage() {
               knownUniverses={knownUniverses}
               knownShipsByUniverse={knownShipsByUniverse}
             />
+          )}
+
+          {/* ── Formulaire édition fic ── */}
+          {editId && session && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>MODIFIER LA FIC</div>
+                <button onClick={() => setEditId(null)} className="btn-stamp" style={{ padding: '6px 14px', fontSize: 11, background: 'var(--ink)', color: 'var(--paper)' }}>× annuler</button>
+              </div>
+              <FicForm
+                state={editFic} setState={setEditFic}
+                onSubmit={saveEdit} status={editStatus}
+                submitLabel="sauvegarder ✦"
+                tapeLabel="modifier l'entrée"
+                tapeColor="var(--yucca)"
+                onCancel={() => setEditId(null)}
+                knownUniverses={knownUniverses}
+                knownShipsByUniverse={knownShipsByUniverse}
+              />
+            </div>
           )}
 
           {/* ── Loading / erreur ── */}
@@ -815,20 +1110,77 @@ export default function GalleryPage() {
 
           {/* ── VUE DOSSIERS ── */}
           {!loading && !error && !selectedUniverse && (
-            universes.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '60px 0' }}>
-                <Doodle kind="flower" size={48} color="var(--pinktone)" style={{ margin: '0 auto 16px', display: 'block' }} />
-                <div className="handwriting" style={{ fontSize: 28, color: 'var(--ink-mute)' }}>
-                  la bibliothèque est vide pour l&apos;instant…
+            <>
+              {/* Barre de recherche globale */}
+              <div style={{ marginBottom: 28 }}>
+                <div className="card" style={{ padding: '12px 18px', transform: 'rotate(-0.3deg)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span className="mono" style={{ fontSize: 10, letterSpacing: '.2em', color: 'var(--ink-mute)', flexShrink: 0 }}>BIBLIOTHÈQUE</span>
+                  <input
+                    value={globalSearch}
+                    onChange={e => { setGlobalSearch(e.target.value); setShowAllFics(true); setPage(1) }}
+                    placeholder="chercher dans toute la bibliothèque…"
+                    style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontFamily: 'var(--f-hand)', fontSize: 20, color: 'var(--ink)' }}
+                  />
+                  <button
+                    onClick={() => { setShowAllFics(v => !v); setPage(1) }}
+                    style={{
+                      padding: '4px 12px', fontFamily: 'var(--f-hand)', fontSize: 14,
+                      background: showAllFics && !globalSearch ? 'var(--ink)' : 'var(--pinktone)',
+                      color: showAllFics && !globalSearch ? 'var(--paper)' : 'var(--ink)',
+                      border: 'none', borderRadius: 2, cursor: 'pointer',
+                      flexShrink: 0, transition: 'all .15s',
+                    }}>
+                    toutes les fics
+                  </button>
+                  {(globalSearch || showAllFics) && (
+                    <button
+                      onClick={() => { setGlobalSearch(''); setShowAllFics(false); setPage(1) }}
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'var(--f-mono)', fontSize: 14, color: 'var(--ink-mute)', padding: 0, flexShrink: 0 }}>
+                      ×
+                    </button>
+                  )}
                 </div>
               </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '28px 20px' }}>
-                {universes.map(u => (
-                  <UniverseFolder key={u} name={u} count={universeMap[u].length} onClick={() => openUniverse(u)} />
-                ))}
-              </div>
-            )
+
+              {/* Vue toutes les fics (recherche globale ou toggle) */}
+              {(globalSearch || showAllFics) ? (
+                <>
+                  <div style={{ marginBottom: 20 }}>
+                    <span className="mono" style={{ fontSize: 10, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>
+                      {globalFiltered.length} fic{globalFiltered.length !== 1 ? 's' : ''}{globalSearch ? ` pour « ${globalSearch} »` : ''}
+                    </span>
+                  </div>
+                  {globalFiltered.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '60px 0' }}>
+                      <div className="handwriting" style={{ fontSize: 24, color: 'var(--ink-mute)' }}>aucune fic trouvée…</div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '48px 30px' }}>
+                      {globalPaginated.map((fic, i) => (
+                        <FicCard key={fic.id} fic={fic} i={i} canEdit={!!session} onRatingChange={handleRatingChange} onEdit={startEdit} />
+                      ))}
+                    </div>
+                  )}
+                  {renderPagination(globalSafePage, globalTotalPages, setPage)}
+                </>
+              ) : (
+                /* Vue dossiers par univers */
+                universes.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '60px 0' }}>
+                    <Doodle kind="flower" size={48} color="var(--pinktone)" style={{ margin: '0 auto 16px', display: 'block' }} />
+                    <div className="handwriting" style={{ fontSize: 28, color: 'var(--ink-mute)' }}>
+                      la bibliothèque est vide pour l&apos;instant…
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '28px 20px' }}>
+                    {universes.map(u => (
+                      <UniverseFolder key={u} name={u} count={universeMap[u].length} onClick={() => openUniverse(u)} />
+                    ))}
+                  </div>
+                )
+              )}
+            </>
           )}
 
           {/* ── VUE INTÉRIEURE UNIVERS ── */}
@@ -859,33 +1211,15 @@ export default function GalleryPage() {
                 </div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '48px 30px' }}>
-                  {paginated.map((fic, i) => <FicCard key={fic.id} fic={fic} i={i} canEdit={!!session} onRatingChange={handleRatingChange} />)}
+                  {paginated.map((fic, i) => <FicCard key={fic.id} fic={fic} i={i} canEdit={!!session} onRatingChange={handleRatingChange} onTagClick={t => { setFilterTag(p => p === t ? null : t); setPage(1) }} activeTag={filterTag} onEdit={startEdit} />)}
                 </div>
               )}
 
-              {totalPages > 1 && (
-                <div style={{ marginTop: 48, display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.22em', color: 'var(--ink)' }}>
-                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
-                    style={{ background: 'none', border: 'none', cursor: safePage === 1 ? 'default' : 'pointer', opacity: safePage === 1 ? .3 : 1, fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.22em', color: 'var(--ink)', padding: 0 }}>
-                    ← prev
-                  </button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-                    <button key={n} onClick={() => setPage(n)}
-                      style={{ width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: n === safePage ? 'var(--ink)' : 'transparent', color: n === safePage ? 'var(--paper)' : 'var(--ink)', border: n === safePage ? 'none' : '1.4px solid var(--ink)', cursor: 'pointer', fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.1em' }}>
-                      {n}
-                    </button>
-                  ))}
-                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
-                    style={{ background: 'none', border: 'none', cursor: safePage === totalPages ? 'default' : 'pointer', opacity: safePage === totalPages ? .3 : 1, fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.22em', color: 'var(--ink)', padding: 0 }}>
-                    next →
-                  </button>
-                </div>
-              )}
+              {renderPagination(safePage, totalPages, setPage)}
             </>
           )}
 
           {/* ── VUE À LIRE ── */}
-
         </div>
 
         {/* Décoratifs */}
@@ -898,10 +1232,6 @@ export default function GalleryPage() {
       </Page>
 
       <HigurumaMascot />
-
-      {showHiguruma && (
-        <IconicPoseOverlay src={iconicPose} totalWidth={1430} frameHeight={255} frames={10} fps={8} scale={1.4} onClose={() => setShowHiguruma(false)} />
-      )}
     </>
   )
 }

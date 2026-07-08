@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Page, Header, Tape, Doodle, Sticker } from '../components/JournalShared'
+import { Page, Header, Tape, Sticker } from '../components/JournalShared'
+import { supabase } from '../lib/supabase'
 
-const STORAGE_KEY = 'ao3_bookmarks'
 const TAG_COLORS = {
   'to read':  'var(--primrose)',
   'en cours': 'var(--lime)',
@@ -16,16 +16,24 @@ function strHue(str = '') {
   return h % 360
 }
 
-function loadBookmark(id) {
-  try {
-    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-    return all.find(b => String(b.id) === String(id)) ?? null
-  } catch { return null }
-}
-
 export default function BookmarkDetailPage() {
   const { id } = useParams()
-  const [b] = useState(() => loadBookmark(id))
+  const [b, setB] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.from('bookmarks').select('*').eq('id', id).single()
+      .then(({ data }) => { setB(data); setLoading(false) })
+  }, [id])
+
+  if (loading) return (
+    <Page>
+      <Header active="bookmarks" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div className="handwriting" style={{ fontSize: 24, color: 'var(--ink-mute)' }}>chargement…</div>
+      </div>
+    </Page>
+  )
 
   if (!b) return (
     <Page>
@@ -107,9 +115,9 @@ export default function BookmarkDetailPage() {
                 color: 'var(--ink)', background: tagColor,
                 borderRadius: 20, padding: '3px 12px',
               }}>{b.tag}</span>
-              {b.date && (
+              {b.created_at && (
                 <span className="mono" style={{ fontSize: 9, letterSpacing: '.12em', color: 'var(--ink-mute)' }}>
-                  · ajouté le {b.date}
+                  · ajouté le {new Date(b.created_at).toLocaleDateString('fr-FR')}
                 </span>
               )}
             </div>

@@ -5,68 +5,6 @@ import { supabase } from '../lib/supabase'
 import Mascot from '../components/Mascot'
 import stickyTrefle from '../assets/stickers/stickyTrefle.png'
 
-const STORAGE_KEY = 'ao3_bookmarks'
-
-// ── Fenêtre citation ───────────────────────────────────────────────────────────
-function timeUntilNext() {
-  const msIn5m    = 1000 * 60 * 5
-  const remaining = msIn5m - (Date.now() % msIn5m)
-  const m = Math.floor(remaining / (1000 * 60))
-  const s = Math.floor((remaining % (1000 * 60)) / 1000)
-  return `${m}m${s.toString().padStart(2, '0')}s`
-}
-
-function QuoteWindow({ quote }) {
-  const [timer, setTimer] = useState(timeUntilNext())
-  useEffect(() => {
-    const t = setInterval(() => setTimer(timeUntilNext()), 1_000)
-    return () => clearInterval(t)
-  }, [])
-
-  return (
-    <div style={{
-      width: 218,
-      transform: 'rotate(-1.2deg)',
-      boxShadow: '0 8px 28px rgba(60,40,20,.20), 0 2px 0 rgba(0,0,0,.06)',
-      borderRadius: 4, overflow: 'hidden',
-      border: '1.5px solid rgba(29,26,22,.14)',
-    }}>
-      {/* Barre de titre style mini-fenêtre */}
-      <div style={{
-        background: 'linear-gradient(90deg, #F9D0CE 0%, #F297A0 100%)',
-        padding: '5px 10px',
-        display: 'flex', alignItems: 'center', gap: 5,
-        userSelect: 'none',
-      }}>
-        {[['#e07070','close'], ['#e8c060','min'], ['#70c870','max']].map(([c, k]) => (
-          <div key={k} style={{ width: 9, height: 9, borderRadius: '50%', background: c, border: '0.8px solid rgba(0,0,0,.18)', flexShrink: 0 }} />
-        ))}
-        <span className="mono" style={{ fontSize: 7, letterSpacing: '.18em', color: 'rgba(29,26,22,.62)', marginLeft: 5, whiteSpace: 'nowrap' }}>
-          CITATION DU MOMENT
-        </span>
-      </div>
-      {/* Contenu */}
-      <div style={{ background: '#fffaf0', padding: '14px 15px 12px' }}>
-        <div className="handwriting" style={{ fontSize: 15.5, color: 'var(--ink)', lineHeight: 1.55, fontStyle: 'italic' }}>
-          «&nbsp;{quote.text}&nbsp;»
-        </div>
-        {quote.author && (
-          <div className="mono" style={{ fontSize: 8, letterSpacing: '.15em', color: 'var(--ink-mute)', marginTop: 9, textAlign: 'right' }}>
-            — {quote.author}
-          </div>
-        )}
-        <div style={{ height: 1, background: 'rgba(29,26,22,.08)', margin: '10px 0 7px' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 11 }}>✿</span>
-          <span className="mono" style={{ fontSize: 7, letterSpacing: '.1em', color: 'var(--ink-mute)', opacity: .65 }}>
-            ↻ dans {timer}
-          </span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function formatWords(n) {
   if (!n) return '0'
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -102,15 +40,9 @@ export default function HomePage() {
   })
   const [recentFics, setRecentFics] = useState([])
   const [toReadList, setToReadList] = useState([])
-  const [quote,      setQuote]      = useState(undefined)
+  const [loadingStats, setLoadingStats] = useState(true)
 
   useEffect(() => {
-    try {
-      const bm = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-      setToReadList(bm.slice(0, 3))
-      setStats(s => ({ ...s, bookmarked: bm.length }))
-    } catch { /* ignore */ }
-
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
       const now        = new Date()
@@ -121,21 +53,17 @@ export default function HomePage() {
         { data: fandoms },
         { data: wordsData },
         { data: lastFicData },
-        { data: quotesData },
+        { data: bmData, count: bmCount },
       ] = await Promise.all([
         supabase.from('fanfictions').select('*', { count: 'exact', head: true }),
         supabase.from('fanfictions').select('universe_name'),
         supabase.from('fanfictions').select('word_count').gte('created_at', monthStart),
-        supabase.from('fanfictions').select('id,work_name,universe_name,image_url,rank,ship_name').order('created_at', { ascending: false }).limit(3),
-        supabase.from('quotes').select('id,text,author').order('id'),
+        supabase.from('fanfictions').select('id,work_name,universe_name,image_url,ship_name,medal').order('created_at', { ascending: false }).limit(3),
+        supabase.from('bookmarks').select('id,title,url,image,tag', { count: 'exact' }).order('created_at', { ascending: false }).limit(3),
       ])
 
-      if (quotesData && quotesData.length > 0) {
-        const windowIdx = Math.floor(Date.now() / (1000 * 60 * 5))
-        setQuote(quotesData[windowIdx % quotesData.length])
-      } else {
-        setQuote(null)
-      }
+      setToReadList(bmData ?? [])
+      setStats(s => ({ ...s, bookmarked: bmCount ?? 0 }))
 
       setRecentFics(lastFicData ?? [])
 
@@ -155,6 +83,7 @@ export default function HomePage() {
       }
 
       setStats(s => ({ ...s, ficsRead: ficsRead ?? 0, writingsCount, wordsMonth, topFandom, runnerFandoms }))
+      setLoadingStats(false)
     }
     load()
   }, [])
@@ -208,8 +137,8 @@ export default function HomePage() {
           <WaveDivider width={320} style={{ marginTop: 20, marginBottom: 4 }} />
 
           <div className="swatch-row" style={{ marginTop: 12, width: 'min(340px, 100%)' }}>
-            <div className="row" style={{ ['--rc']: 'var(--pinktone)' }}><span>FICS LUES</span><span>·</span><span className="num">{stats.ficsRead}</span></div>
-            <div className="row" style={{ ['--rc']: 'var(--primrose)' }}><span>MARQUE-PAGES</span><span>·</span><span className="num">{stats.bookmarked}</span></div>
+            <div className="row" style={{ ['--rc']: 'var(--pinktone)' }}><span>FICS LUES</span><span>·</span><span className="num">{loadingStats ? '…' : stats.ficsRead}</span></div>
+            <div className="row" style={{ ['--rc']: 'var(--primrose)' }}><span>MARQUE-PAGES</span><span>·</span><span className="num">{loadingStats ? '…' : stats.bookmarked}</span></div>
             <div className="row" style={{ ['--rc']: 'var(--yucca)' }}><span>ÉCRITS</span><span>·</span><span className="num">{stats.writingsCount}</span></div>
           </div>
 
@@ -407,12 +336,6 @@ export default function HomePage() {
       </div>
     </Page>
 
-    {/* Citation flottante à droite du carnet */}
-    {quote !== undefined && (
-      <div style={{ position: 'absolute', top: 110, right: -248, zIndex: 20 }}>
-        <QuoteWindow quote={quote ?? { text: "aucune citation pour l'instant… ✿", author: null }} />
-      </div>
-    )}
     </div>
 
     <Mascot />

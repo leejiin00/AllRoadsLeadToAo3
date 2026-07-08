@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { AuthProvider } from './lib/AuthContext'
 import HomePage from './pages/HomePage'
 import GalleryPage from './pages/GalleryPage'
 import DetailPage from './pages/DetailPage'
@@ -14,6 +15,7 @@ import Decorations from './components/Decorations'
 
 export default function App() {
   return (
+    <AuthProvider>
     <BrowserRouter>
       <Decorations />
       <Routes>
@@ -29,5 +31,6 @@ export default function App() {
         <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
+    </AuthProvider>
   )
 }

@@ -237,7 +237,7 @@ function FormatBar({ editorRef, fontSize, onFontSize, fontColor, onFontColor,
 }
 
 /* ── Folder card ────────────────────────────────────────────────── */
-function FolderCard({ name, count, onClick, isNew, onRename }) {
+function FolderCard({ name, count, onClick, isNew }) {
   const [hov, setHov] = useState(false)
   const icon = isNew ? null : folderIcon(name)
 
@@ -351,6 +351,7 @@ export default function WritingPage() {
   const [newFolderName, setNewFolderName] = useState('')
 
   const saveTimer = useRef(null)
+  const isSaving  = useRef(false)
   const stateRef  = useRef({ writings: [], activeId: null })
   const editorRef = useRef(null)
   useEffect(() => { stateRef.current = { writings, activeId } }, [writings, activeId])
@@ -377,14 +378,20 @@ export default function WritingPage() {
 
   /* ── Save ── */
   async function save() {
-    const { writings, activeId } = stateRef.current
-    const w = writings.find(x => x.id === activeId); if (!w) return
-    setStatus('saving')
-    const { error } = await supabase.from('writings').update({
-      fic_title: w.fic_title, chapters: w.chapters,
-      folder: w.folder ?? null, updated_at: new Date().toISOString(),
-    }).eq('id', activeId)
-    setStatus(error ? 'error' : 'saved')
+    if (isSaving.current) return
+    isSaving.current = true
+    try {
+      const { writings, activeId } = stateRef.current
+      const w = writings.find(x => x.id === activeId); if (!w) return
+      setStatus('saving')
+      const { error } = await supabase.from('writings').update({
+        fic_title: w.fic_title, chapters: w.chapters,
+        folder: w.folder ?? null, updated_at: new Date().toISOString(),
+      }).eq('id', activeId)
+      setStatus(error ? 'error' : 'saved')
+    } finally {
+      isSaving.current = false
+    }
   }
 
   function triggerSave() {
@@ -486,331 +493,329 @@ export default function WritingPage() {
   )
 
   /* ══════════════════════════════════════════════════════════════
-     VUE : ACCUEIL — grille de dossiers
-  ══════════════════════════════════════════════════════════════ */
-  if (view === 'home') return (
-    <Page>
-      <Header active="writing" />
-
-      <div style={{ padding: '88px 56px 56px' }}>
-
-        {/* Titre */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end', gap: 12 }}>
-            <RibbonMark color="var(--lime)" h={64} w={24} rot={-4} style={{ marginBottom: 6, flexShrink: 0 }} />
-            <div>
-              <div className="mono" style={{ fontSize: 11, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>SECTION D</div>
-              <div className="heading-handwritten" style={{ fontSize: 'clamp(52px, 7vw, 88px)', color: 'var(--ink)', lineHeight: .9, marginTop: 4 }}>
-                Mes écrits
-              </div>
-            </div>
-            <PaperClip size={22} rot={15} style={{ marginBottom: 14, flexShrink: 0 }} />
-          </div>
-
-          <div style={{ display: 'flex', gap: 12, alignSelf: 'flex-end', marginBottom: 10 }}>
-            <button onClick={() => { setSelFolder(null); setView('projects') }} className="btn-stamp btn-stamp--ghost" style={{ padding: '10px 18px', fontSize: 13 }}>
-              tous · {writings.length}
-            </button>
-          </div>
-        </div>
-
-        <WaveDivider width={320} style={{ marginBottom: 44, opacity: .65 }} />
-
-        {/* Grille de dossiers */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '48px 32px', alignItems: 'start' }}>
-
-          {folders.map(f => (
-            <FolderCard key={f} name={f}
-              count={writings.filter(w => w.folder === f).length}
-              onClick={() => { setSelFolder(f); setView('projects') }} />
-          ))}
-
-          {/* Nouveau dossier — input ou card */}
-          {newFolder ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '16px 12px', background: 'rgba(255,250,240,.8)', borderRadius: 10, border: '1.5px dashed rgba(0,0,0,.2)' }}>
-              <input
-                autoFocus value={newFolderName}
-                onChange={e => setNewFolderName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') createFolder(); if (e.key === 'Escape') { setNewFolder(false); setNewFolderName('') } }}
-                placeholder="nom du dossier…"
-                style={{ background: 'transparent', border: 'none', borderBottom: '1.4px solid var(--ink)', fontFamily: 'var(--f-hand)', fontSize: 17, color: 'var(--ink)', outline: 'none', padding: '3px 0', width: '100%' }} />
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={createFolder} className="btn-stamp" style={{ flex: 1, padding: '6px 0', fontSize: 11 }}>créer</button>
-                <button onClick={() => { setNewFolder(false); setNewFolderName('') }} className="btn-stamp btn-stamp--ghost" style={{ flex: 1, padding: '6px 0', fontSize: 11 }}>×</button>
-              </div>
-            </div>
-          ) : (
-            <FolderCard isNew name="nouveau" onClick={() => setNewFolder(true)} />
-          )}
-        </div>
-
-        {folders.length === 0 && !newFolder && (
-          <div style={{ marginTop: 32, textAlign: 'center' }}>
-            <div className="handwriting" style={{ fontSize: 22, color: 'var(--ink-mute)', marginBottom: 8 }}>
-              pas encore de dossier…
-            </div>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: 'var(--ink-mute)' }}>
-              crée un dossier pour organiser tes projets, ou consulte tous les projets
-            </div>
-          </div>
-        )}
-      </div>
-
-      <Sticker kind="flower_white" size={85} rot={10}  style={{ position: 'absolute', top: 72, right: 40, opacity: .6 }} />
-      <Sticker kind="tulips"       size={78} rot={-8}  style={{ position: 'absolute', bottom: 70, right: 44, opacity: .6 }} />
-      <div className="floral-corner" style={{ opacity: .35, pointerEvents: 'none' }} />
-    </Page>
-  )
-
-  /* ══════════════════════════════════════════════════════════════
-     VUE : PROJETS — cartes de projets dans un dossier
-  ══════════════════════════════════════════════════════════════ */
-  if (view === 'projects') return (
-    <Page>
-      <Header active="writing" />
-
-      <div style={{ padding: '88px 56px 56px' }}>
-
-        {/* Nav */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
-          <button onClick={() => setView('home')} className="btn-stamp btn-stamp--ghost" style={{ padding: '8px 16px', fontSize: 12 }}>
-            ← dossiers
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {selFolder && <img src={folderIcon(selFolder)} alt="" style={{ width: 36 }} />}
-            <div className="handwriting" style={{ fontSize: 36, color: 'var(--ink)', lineHeight: 1 }}>
-              {selFolder ?? 'Tous les projets'}
-            </div>
-          </div>
-        </div>
-
-        <WaveDivider width={260} style={{ marginBottom: 36, opacity: .6 }} />
-
-        {/* Grille projets */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(158px, 1fr))', gap: '40px 24px', alignItems: 'start' }}>
-
-          {folderWritings.map(w => (
-            <ProjectCard key={w.id} w={w}
-              sheetUrl={(prefs[w.id] ?? {}).sheetUrl ?? null}
-              onClick={() => openProject(w.id)}
-              onDelete={() => deleteProject(w.id)} />
-          ))}
-
-          {/* Nouveau projet */}
-          <div onClick={() => newProject(selFolder)} style={{
-            width: 152, height: 152 + 44,
-            borderRadius: 8, border: '2px dashed rgba(0,0,0,.2)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 8, cursor: 'pointer', background: 'rgba(255,250,240,.5)', transition: 'background .15s',
-          }}>
-            <div className="handwriting" style={{ fontSize: 28, color: 'var(--ink-mute)' }}>✦</div>
-            <div className="handwriting" style={{ fontSize: 14, color: 'var(--ink-mute)' }}>nouveau projet</div>
-          </div>
-        </div>
-
-        {folderWritings.length === 0 && (
-          <div style={{ marginTop: 32, textAlign: 'center' }}>
-            <div className="handwriting" style={{ fontSize: 22, color: 'var(--ink-mute)' }}>aucun projet ici…</div>
-          </div>
-        )}
-      </div>
-
-      <Sticker kind="shrub" size={88} rot={6} style={{ position: 'absolute', bottom: 70, left: 40, opacity: .55 }} />
-    </Page>
-  )
-
-  /* ══════════════════════════════════════════════════════════════
-     VUE : ÉDITEUR — zone d'écriture
+     VUES : home | projects | editor  (un seul <Page> wrapper)
   ══════════════════════════════════════════════════════════════ */
   return (
-    <Page w="min(1400px, 98vw)">
+    <Page w={view === 'editor' ? 'min(1400px, 98vw)' : undefined}>
+      <Header active="writing" />
 
-      {/* ─ Barre d'outils supérieure ─ */}
-      <div style={{
-        position: 'sticky', top: 0, zIndex: 10,
-        display: 'flex', alignItems: 'center', gap: 10, padding: '12px 20px',
-        background: 'rgba(255,250,240,.94)', borderBottom: '1px dotted rgba(0,0,0,.1)',
-        backdropFilter: 'blur(6px)', flexWrap: 'wrap',
-      }}>
-        {/* Retour */}
-        <button onClick={() => { save(); setView('projects') }} className="btn-stamp btn-stamp--ghost" style={{ padding: '6px 14px', fontSize: 12, flexShrink: 0 }}>
-          ← projets
-        </button>
+      {/* ══ VUE HOME — grille de dossiers ══ */}
+      {view === 'home' && (
+        <>
+          <div style={{ padding: '88px 56px 56px' }}>
 
-        {/* Titre */}
-        <input
-          value={activeWriting?.fic_title ?? ''}
-          onChange={e => patchActive({ fic_title: e.target.value })}
-          placeholder="titre du projet…"
-          style={{
-            flex: 1, minWidth: 100, background: 'transparent', border: 'none',
-            borderBottom: '1.2px solid rgba(0,0,0,.18)', fontFamily: 'var(--f-hand)',
-            fontSize: 20, color: 'var(--ink)', outline: 'none', padding: '2px 4px',
-          }} />
-
-        {/* Chapitres */}
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flexShrink: 0 }}>
-          {chapters.map(c => (
-            <button key={c.id} onClick={() => setActiveChId(c.id)} style={{
-              padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer',
-              background: c.id === activeChId ? 'var(--primrose)' : 'rgba(0,0,0,.06)',
-              fontFamily: 'var(--f-hand)', fontSize: 13, color: 'var(--ink)',
-              display: 'flex', alignItems: 'center', gap: 5,
-            }}>
-              <span>{c.title}</span>
-              {chapters.length > 1 && (
-                <span onClick={e => { e.stopPropagation(); removeChapter(c.id) }} style={{ opacity: .4, fontSize: 12 }}>×</span>
-              )}
-            </button>
-          ))}
-          <button onClick={addChapter} style={{
-            padding: '5px 10px', borderRadius: 20,
-            border: '1.2px dashed rgba(0,0,0,.22)', background: 'none',
-            cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 13, color: 'var(--ink-mute)',
-          }}>+ ch.</button>
-        </div>
-
-        {/* Stats + status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto', flexShrink: 0 }}>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: '.12em', color: 'var(--lime-d)' }}>
-            {activeWords.toLocaleString('fr-FR')} mots
-          </div>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: '.15em', color: STATUS_COLOR[status] }}>
-            {STATUS_LABEL[status]}
-          </div>
-        </div>
-      </div>
-
-      {/* ─ Zone d'écriture ─ */}
-      {activeChapter && (
-        <div style={{
-          minHeight: '80vh',
-          background: 'rgba(220,213,200,.25)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-        }}>
-
-          {/* Barre de formatage */}
-          <FormatBar
-            editorRef={editorRef}
-            fontSize={fontSize}   onFontSize={v => updatePrefs({ fontSize: v })}
-            fontColor={fontColor} onFontColor={v => updatePrefs({ fontColor: v })}
-            showLines={showLines} onShowLines={v => updatePrefs({ showLines: v })}
-          />
-
-          {/* Zone de page centrée */}
-          <div style={{ width: '100%', display: 'flex', justifyContent: 'center', padding: '40px 24px 0' }}>
-            <div style={{ width: '100%', maxWidth: 860, position: 'relative' }}>
-
-              {/* Layout AO3 */}
-              <div style={{
-                padding: '36px 48px 80px',
-                position: 'relative',
-                maxWidth: 860, margin: '0 auto', boxSizing: 'border-box', width: '100%',
-                background: 'rgba(255, 228, 232, 0.6)',
-                borderRadius: 4,
-                boxShadow: 'inset 0 0 0 1px rgba(220, 160, 175, 0.15)',
-              }}>
-
-                {/* Titre du chapitre */}
-                <input
-                  value={activeChapter.title}
-                  onChange={e => updateChapter(activeChId, { title: e.target.value })}
-                  placeholder="Titre du chapitre…"
-                  style={{
-                    background: 'transparent', border: 'none',
-                    fontFamily: 'var(--f-display)', fontSize: 28, color: 'var(--ink)',
-                    outline: 'none', width: '100%', marginBottom: 28,
-                    letterSpacing: '-.01em',
-                  }} />
-
-                {/* Zone résumé */}
-                {(activeChapter.summary !== undefined) && (
-                  <textarea
-                    value={activeChapter.summary ?? ''}
-                    onChange={e => updateChapter(activeChId, { summary: e.target.value })}
-                    placeholder="Résumé du chapitre (optionnel)…"
-                    rows={3}
-                    style={{
-                      width: '100%', background: 'transparent',
-                      border: 'none', outline: 'none', resize: 'none',
-                      fontFamily: 'var(--f-body)', fontSize: 15, fontStyle: 'italic',
-                      color: 'var(--ink-soft)', lineHeight: 1.7,
-                      marginBottom: 20, display: 'block',
-                    }}
-                  />
-                )}
-
-                {/* Séparateur Notes */}
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                    <span style={{ fontFamily: 'var(--f-body)', fontSize: 15, fontWeight: 700, color: 'var(--ink)', textDecoration: 'underline', textUnderlineOffset: 3 }}>Notes:</span>
+            {/* Titre */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+                <RibbonMark color="var(--lime)" h={64} w={24} rot={-4} style={{ marginBottom: 6, flexShrink: 0 }} />
+                <div>
+                  <div className="mono" style={{ fontSize: 11, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>SECTION D</div>
+                  <div className="heading-handwritten" style={{ fontSize: 'clamp(52px, 7vw, 88px)', color: 'var(--ink)', lineHeight: .9, marginTop: 4 }}>
+                    Mes écrits
                   </div>
-                  <div style={{ height: 1, background: 'rgba(29,26,22,.15)', marginTop: 8, marginBottom: 12 }} />
-                  <textarea
-                    value={activeChapter.notes ?? ''}
-                    onChange={e => updateChapter(activeChId, { notes: e.target.value })}
-                    placeholder="Notes de chapitre (optionnel)…"
-                    rows={2}
-                    style={{
-                      width: '100%', background: 'transparent',
-                      border: 'none', outline: 'none', resize: 'none',
-                      fontFamily: 'var(--f-body)', fontSize: 14,
-                      color: 'var(--ink-soft)', lineHeight: 1.65,
-                      display: 'block',
-                    }}
-                  />
                 </div>
+                <PaperClip size={22} rot={15} style={{ marginBottom: 14, flexShrink: 0 }} />
+              </div>
 
-                {/* Séparateur corps */}
-                <div style={{ height: 1, background: 'rgba(29,26,22,.15)', marginBottom: 32 }} />
+              <div style={{ display: 'flex', gap: 12, alignSelf: 'flex-end', marginBottom: 10 }}>
+                <button onClick={() => { setSelFolder(null); setView('projects') }} className="btn-stamp btn-stamp--ghost" style={{ padding: '10px 18px', fontSize: 13 }}>
+                  tous · {writings.length}
+                </button>
+              </div>
+            </div>
 
-                {/* Corps principal */}
-                <RichEditor
-                  key={activeChId}
-                  ref={editorRef}
-                  initialHtml={normalizeBody(activeChapter.body)}
-                  onChange={body => updateChapter(activeChId, { body })}
-                  style={{
-                    width: '100%', minHeight: 500,
-                    fontFamily: 'var(--f-body)',
-                    fontSize: fontSize,
-                    lineHeight: `${lineHeight}px`,
-                    color: fontColor,
-                    boxSizing: 'border-box',
-                    wordBreak: 'break-word',
-                    ...(showLines ? (() => {
-                      const lp = Math.round(lineHeight * 0.82)
-                      return {
-                        backgroundImage: `linear-gradient(transparent ${lp}px, rgba(29,26,22,.35) ${lp}px, rgba(29,26,22,.35) ${lp + 1}px, transparent ${lp + 1}px)`,
-                        backgroundSize: `100% ${lineHeight}px`,
-                        backgroundRepeat: 'repeat',
-                      }
-                    })() : {}),
-                  }}
-                />
+            <WaveDivider width={320} style={{ marginBottom: 44, opacity: .65 }} />
+
+            {/* Grille de dossiers */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '48px 32px', alignItems: 'start' }}>
+
+              {folders.map(f => (
+                <FolderCard key={f} name={f}
+                  count={writings.filter(w => w.folder === f).length}
+                  onClick={() => { setSelFolder(f); setView('projects') }} />
+              ))}
+
+              {/* Nouveau dossier — input ou card */}
+              {newFolder ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '16px 12px', background: 'rgba(255,250,240,.8)', borderRadius: 10, border: '1.5px dashed rgba(0,0,0,.2)' }}>
+                  <input
+                    autoFocus value={newFolderName}
+                    onChange={e => setNewFolderName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') createFolder(); if (e.key === 'Escape') { setNewFolder(false); setNewFolderName('') } }}
+                    placeholder="nom du dossier…"
+                    style={{ background: 'transparent', border: 'none', borderBottom: '1.4px solid var(--ink)', fontFamily: 'var(--f-hand)', fontSize: 17, color: 'var(--ink)', outline: 'none', padding: '3px 0', width: '100%' }} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={createFolder} className="btn-stamp" style={{ flex: 1, padding: '6px 0', fontSize: 11 }}>créer</button>
+                    <button onClick={() => { setNewFolder(false); setNewFolderName('') }} className="btn-stamp btn-stamp--ghost" style={{ flex: 1, padding: '6px 0', fontSize: 11 }}>×</button>
+                  </div>
+                </div>
+              ) : (
+                <FolderCard isNew name="nouveau" onClick={() => setNewFolder(true)} />
+              )}
+            </div>
+
+            {folders.length === 0 && !newFolder && (
+              <div style={{ marginTop: 32, textAlign: 'center' }}>
+                <div className="handwriting" style={{ fontSize: 22, color: 'var(--ink-mute)', marginBottom: 8 }}>
+                  pas encore de dossier…
+                </div>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: 'var(--ink-mute)' }}>
+                  crée un dossier pour organiser tes projets, ou consulte tous les projets
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Sticker kind="flower_white" size={85} rot={10}  style={{ position: 'absolute', top: 72, right: 40, opacity: .6 }} />
+          <Sticker kind="tulips"       size={78} rot={-8}  style={{ position: 'absolute', bottom: 70, right: 44, opacity: .6 }} />
+          <div className="floral-corner" style={{ opacity: .35, pointerEvents: 'none' }} />
+        </>
+      )}
+
+      {/* ══ VUE PROJECTS — cartes de projets dans un dossier ══ */}
+      {view === 'projects' && (
+        <>
+          <div style={{ padding: '88px 56px 56px' }}>
+
+            {/* Nav */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
+              <button onClick={() => setView('home')} className="btn-stamp btn-stamp--ghost" style={{ padding: '8px 16px', fontSize: 12 }}>
+                ← dossiers
+              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {selFolder && <img src={folderIcon(selFolder)} alt="" style={{ width: 36 }} />}
+                <div className="handwriting" style={{ fontSize: 36, color: 'var(--ink)', lineHeight: 1 }}>
+                  {selFolder ?? 'Tous les projets'}
+                </div>
+              </div>
+            </div>
+
+            <WaveDivider width={260} style={{ marginBottom: 36, opacity: .6 }} />
+
+            {/* Grille projets */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(158px, 1fr))', gap: '40px 24px', alignItems: 'start' }}>
+
+              {folderWritings.map(w => (
+                <ProjectCard key={w.id} w={w}
+                  sheetUrl={(prefs[w.id] ?? {}).sheetUrl ?? null}
+                  onClick={() => openProject(w.id)}
+                  onDelete={() => deleteProject(w.id)} />
+              ))}
+
+              {/* Nouveau projet */}
+              <div onClick={() => newProject(selFolder)} style={{
+                width: 152, height: 152 + 44,
+                borderRadius: 8, border: '2px dashed rgba(0,0,0,.2)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: 8, cursor: 'pointer', background: 'rgba(255,250,240,.5)', transition: 'background .15s',
+              }}>
+                <div className="handwriting" style={{ fontSize: 28, color: 'var(--ink-mute)' }}>✦</div>
+                <div className="handwriting" style={{ fontSize: 14, color: 'var(--ink-mute)' }}>nouveau projet</div>
+              </div>
+            </div>
+
+            {folderWritings.length === 0 && (
+              <div style={{ marginTop: 32, textAlign: 'center' }}>
+                <div className="handwriting" style={{ fontSize: 22, color: 'var(--ink-mute)' }}>aucun projet ici…</div>
+              </div>
+            )}
+          </div>
+
+          <Sticker kind="shrub" size={88} rot={6} style={{ position: 'absolute', bottom: 70, left: 40, opacity: .55 }} />
+        </>
+      )}
+
+      {/* ══ VUE EDITOR — zone d'écriture ══ */}
+      {view === 'editor' && (
+        <>
+          {/* ─ Barre d'outils supérieure ─ */}
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 10,
+            display: 'flex', alignItems: 'center', gap: 10, padding: '12px 20px',
+            background: 'rgba(255,250,240,.94)', borderBottom: '1px dotted rgba(0,0,0,.1)',
+            backdropFilter: 'blur(6px)', flexWrap: 'wrap',
+          }}>
+            {/* Retour */}
+            <button onClick={async () => { await save(); setView('projects') }} className="btn-stamp btn-stamp--ghost" style={{ padding: '6px 14px', fontSize: 12, flexShrink: 0 }}>
+              ← projets
+            </button>
+
+            {/* Titre */}
+            <input
+              value={activeWriting?.fic_title ?? ''}
+              onChange={e => patchActive({ fic_title: e.target.value })}
+              placeholder="titre du projet…"
+              style={{
+                flex: 1, minWidth: 100, background: 'transparent', border: 'none',
+                borderBottom: '1.2px solid rgba(0,0,0,.18)', fontFamily: 'var(--f-hand)',
+                fontSize: 20, color: 'var(--ink)', outline: 'none', padding: '2px 4px',
+              }} />
+
+            {/* Chapitres */}
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flexShrink: 0 }}>
+              {chapters.map(c => (
+                <button key={c.id} onClick={() => setActiveChId(c.id)} style={{
+                  padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer',
+                  background: c.id === activeChId ? 'var(--primrose)' : 'rgba(0,0,0,.06)',
+                  fontFamily: 'var(--f-hand)', fontSize: 13, color: 'var(--ink)',
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}>
+                  <span>{c.title}</span>
+                  {chapters.length > 1 && (
+                    <span onClick={e => { e.stopPropagation(); removeChapter(c.id) }} style={{ opacity: .4, fontSize: 12 }}>×</span>
+                  )}
+                </button>
+              ))}
+              <button onClick={addChapter} style={{
+                padding: '5px 10px', borderRadius: 20,
+                border: '1.2px dashed rgba(0,0,0,.22)', background: 'none',
+                cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 13, color: 'var(--ink-mute)',
+              }}>+ ch.</button>
+            </div>
+
+            {/* Stats + status */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto', flexShrink: 0 }}>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: '.12em', color: 'var(--lime-d)' }}>
+                {activeWords.toLocaleString('fr-FR')} mots
+              </div>
+              <div className="mono" style={{ fontSize: 9, letterSpacing: '.15em', color: STATUS_COLOR[status] }}>
+                {STATUS_LABEL[status]}
               </div>
             </div>
           </div>
 
-          {/* Stats bas */}
-          <div style={{
-            position: 'sticky', bottom: 0, width: '100%',
-            display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 20,
-            padding: '8px 40px', marginTop: 'auto',
-            background: 'rgba(255,250,240,.82)', backdropFilter: 'blur(4px)',
-            borderTop: '1px dotted rgba(0,0,0,.08)',
-          }}>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>
-              {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
-            </div>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: '.14em', color: 'var(--ink-mute)' }}>
-              total : {totalWords.toLocaleString('fr-FR')} mots · {chapters.length} ch.
-            </div>
-          </div>
-        </div>
-      )}
+          {/* ─ Zone d'écriture ─ */}
+          {activeChapter && (
+            <div style={{
+              minHeight: '80vh',
+              background: 'rgba(220,213,200,.25)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+            }}>
 
-      <div className="floral-corner" style={{ opacity: .2, pointerEvents: 'none' }} />
+              {/* Barre de formatage */}
+              <FormatBar
+                editorRef={editorRef}
+                fontSize={fontSize}   onFontSize={v => updatePrefs({ fontSize: v })}
+                fontColor={fontColor} onFontColor={v => updatePrefs({ fontColor: v })}
+                showLines={showLines} onShowLines={v => updatePrefs({ showLines: v })}
+              />
+
+              {/* Zone de page centrée */}
+              <div style={{ width: '100%', display: 'flex', justifyContent: 'center', padding: '40px 24px 0' }}>
+                <div style={{ width: '100%', maxWidth: 860, position: 'relative' }}>
+
+                  {/* Layout AO3 */}
+                  <div style={{
+                    padding: '36px 48px 80px',
+                    position: 'relative',
+                    maxWidth: 860, margin: '0 auto', boxSizing: 'border-box', width: '100%',
+                    background: 'rgba(255, 228, 232, 0.6)',
+                    borderRadius: 4,
+                    boxShadow: 'inset 0 0 0 1px rgba(220, 160, 175, 0.15)',
+                  }}>
+
+                    {/* Titre du chapitre */}
+                    <input
+                      value={activeChapter.title}
+                      onChange={e => updateChapter(activeChId, { title: e.target.value })}
+                      placeholder="Titre du chapitre…"
+                      style={{
+                        background: 'transparent', border: 'none',
+                        fontFamily: 'var(--f-display)', fontSize: 28, color: 'var(--ink)',
+                        outline: 'none', width: '100%', marginBottom: 28,
+                        letterSpacing: '-.01em',
+                      }} />
+
+                    {/* Zone résumé */}
+                    {(activeChapter.summary !== undefined) && (
+                      <textarea
+                        value={activeChapter.summary ?? ''}
+                        onChange={e => updateChapter(activeChId, { summary: e.target.value })}
+                        placeholder="Résumé du chapitre (optionnel)…"
+                        rows={3}
+                        style={{
+                          width: '100%', background: 'transparent',
+                          border: 'none', outline: 'none', resize: 'none',
+                          fontFamily: 'var(--f-body)', fontSize: 15, fontStyle: 'italic',
+                          color: 'var(--ink-soft)', lineHeight: 1.7,
+                          marginBottom: 20, display: 'block',
+                        }}
+                      />
+                    )}
+
+                    {/* Séparateur Notes */}
+                    <div style={{ marginBottom: 20 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                        <span style={{ fontFamily: 'var(--f-body)', fontSize: 15, fontWeight: 700, color: 'var(--ink)', textDecoration: 'underline', textUnderlineOffset: 3 }}>Notes:</span>
+                      </div>
+                      <div style={{ height: 1, background: 'rgba(29,26,22,.15)', marginTop: 8, marginBottom: 12 }} />
+                      <textarea
+                        value={activeChapter.notes ?? ''}
+                        onChange={e => updateChapter(activeChId, { notes: e.target.value })}
+                        placeholder="Notes de chapitre (optionnel)…"
+                        rows={2}
+                        style={{
+                          width: '100%', background: 'transparent',
+                          border: 'none', outline: 'none', resize: 'none',
+                          fontFamily: 'var(--f-body)', fontSize: 14,
+                          color: 'var(--ink-soft)', lineHeight: 1.65,
+                          display: 'block',
+                        }}
+                      />
+                    </div>
+
+                    {/* Séparateur corps */}
+                    <div style={{ height: 1, background: 'rgba(29,26,22,.15)', marginBottom: 32 }} />
+
+                    {/* Corps principal */}
+                    <RichEditor
+                      key={activeChId}
+                      ref={editorRef}
+                      initialHtml={normalizeBody(activeChapter.body)}
+                      onChange={body => updateChapter(activeChId, { body })}
+                      style={{
+                        width: '100%', minHeight: 500,
+                        fontFamily: 'var(--f-body)',
+                        fontSize: fontSize,
+                        lineHeight: `${lineHeight}px`,
+                        color: fontColor,
+                        boxSizing: 'border-box',
+                        wordBreak: 'break-word',
+                        ...(showLines ? (() => {
+                          const lp = Math.round(lineHeight * 0.82)
+                          return {
+                            backgroundImage: `linear-gradient(transparent ${lp}px, rgba(29,26,22,.35) ${lp}px, rgba(29,26,22,.35) ${lp + 1}px, transparent ${lp + 1}px)`,
+                            backgroundSize: `100% ${lineHeight}px`,
+                            backgroundRepeat: 'repeat',
+                          }
+                        })() : {}),
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats bas */}
+              <div style={{
+                position: 'sticky', bottom: 0, width: '100%',
+                display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 20,
+                padding: '8px 40px', marginTop: 'auto',
+                background: 'rgba(255,250,240,.82)', backdropFilter: 'blur(4px)',
+                borderTop: '1px dotted rgba(0,0,0,.08)',
+              }}>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>
+                  {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                </div>
+                <div className="mono" style={{ fontSize: 9, letterSpacing: '.14em', color: 'var(--ink-mute)' }}>
+                  total : {totalWords.toLocaleString('fr-FR')} mots · {chapters.length} ch.
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="floral-corner" style={{ opacity: .2, pointerEvents: 'none' }} />
+        </>
+      )}
     </Page>
   )
 }

@@ -1,6 +1,7 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/AuthContext'
 import toyIcon       from '../assets/butt.png'
 
 import _sBonbon      from '../assets/stickers/stickyBonbon.png'
@@ -264,6 +265,7 @@ export const Page = ({ children, w = 'min(1280px, 95vw)', style }) => {
 }
 
 export const NavBar = ({ active = 'home', session }) => {
+  const navigate = useNavigate()
   const items = [
     ['home', 'accueil', '/'],
     ['gallery', 'bibliothèque', '/gallery'],
@@ -273,6 +275,16 @@ export const NavBar = ({ active = 'home', session }) => {
     ['stats', 'stats', '/stats'],
   ]
   if (session) items.push(['admin', 'index', '/admin'])
+
+  async function handleAuthClick(e) {
+    e.preventDefault()
+    if (session) {
+      await supabase.auth.signOut()
+      navigate('/')
+    } else {
+      navigate('/login')
+    }
+  }
 
   return (
     <div style={{ display:'flex', alignItems:'center', gap: 28, fontFamily:'var(--f-mono)', fontSize: 11, letterSpacing:'.22em', textTransform:'uppercase', color:'var(--ink)' }}>
@@ -284,25 +296,17 @@ export const NavBar = ({ active = 'home', session }) => {
           </span>
         </Link>
       ))}
-      <Link to="/login" style={{ textDecoration: 'none', color: 'inherit' }}>
-        <span style={{ position:'relative', paddingBottom: 2, borderBottom: active === 'login' ? '1.6px solid var(--ink)' : 'none', opacity: active === 'login' ? 1 : .55 }}>
+      <a href="#" onClick={handleAuthClick} style={{ textDecoration: 'none', color: 'inherit' }}>
+        <span style={{ position:'relative', paddingBottom: 2, opacity: .55 }}>
           {session ? 'déconnexion' : 'connexion'}
-          {active === 'login' && <span className="sparkle" style={{ position:'absolute', top:-10, right:-14 }} />}
         </span>
-      </Link>
+      </a>
     </div>
   )
 }
 
 export const Header = ({ active }) => {
-  const [session, setSession] = useState(null)
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
-    return () => subscription.unsubscribe()
-  }, [])
-
+  const session = useAuth()
   return (
     <div style={{ position:'absolute', top: 28, left: 56, right: 56, display:'flex', justifyContent:'space-between', alignItems:'center', zIndex: 5 }}>
       <div style={{ display:'flex', alignItems:'baseline', gap: 10 }}>

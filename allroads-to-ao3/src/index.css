@@ -6,6 +6,14 @@ button, a, input, select, textarea, [role="button"] {
   z-index: 2;
 }
 
+/* Masquer les spinners sur les inputs numériques */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; }
+
 @layer base {
   :root {
     --primrose: #F297A0;

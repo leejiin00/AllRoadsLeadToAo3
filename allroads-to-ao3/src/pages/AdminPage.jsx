@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Page, Header, Sticky, Tape } from '../components/JournalShared'
 import { supabase } from '../lib/supabase'
+import { parseIntField, ficEnding, ENDING_LABEL, ENDING_COLOR } from '../lib/utils'
 import TagInput from '../components/TagInput'
 import ImageUpload from '../components/ImageUpload'
 import { BloodDrop, StarMark, RatingIcon } from '../components/JournalShared'
@@ -8,9 +9,9 @@ import { BloodDrop, StarMark, RatingIcon } from '../components/JournalShared'
 const EMPTY_FIC = {
   work_name: '', author_name: '', universe_name: '', ships: [], link: '', image_url: '',
   summary: '', my_review: '', tags: [],
-  rank: '', rating: '', word_count: '', chapter_count: '', read_count: '',
+  rating: '', word_count: '', chapter_count: '', read_count: '',
   good_ending: false, bad_ending: false,
-  content_rating: '',
+  content_rating: '', role: '', medal: '',
 }
 
 function buildPayload(fic) {
@@ -24,24 +25,18 @@ function buildPayload(fic) {
     summary:       fic.summary.trim()       || null,
     my_review:     fic.my_review.trim()     || null,
     tags:          fic.tags.length ? fic.tags : null,
-    rank:          parseInt(fic.rank)       || null,
     rating:        parseFloat(fic.rating)   || null,
-    word_count:    parseInt(fic.word_count) || null,
-    chapter_count: parseInt(fic.chapter_count) || null,
-    read_count:    parseInt(fic.read_count) || null,
+    role:          fic.role  || null,
+    medal:         fic.medal || null,
+    word_count:    parseIntField(fic.word_count),
+    chapter_count: parseIntField(fic.chapter_count),
+    read_count:    parseIntField(fic.read_count),
     good_ending:     fic.good_ending,
     bad_ending:      fic.bad_ending,
     content_rating:  fic.content_rating || null,
   }
 }
 
-const ENDING_LABEL = { happy: 'happy end ✿', bad: 'bad end', open: 'open end' }
-const ENDING_COLOR = { happy: 'var(--lime-d)', bad: 'var(--primrose)', open: 'var(--ink-mute)' }
-function ficEnding(f) {
-  if (f.good_ending && !f.bad_ending) return 'happy'
-  if (f.bad_ending  && !f.good_ending) return 'bad'
-  return 'open'
-}
 
 function field(state, setState, key, label, opts = {}) {
   return (
@@ -84,7 +79,6 @@ function FicForm({ state, setState, onSubmit, status, submitLabel, tapeLabel, ta
           <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>IMAGE DE COUVERTURE</div>
           <ImageUpload value={state.image_url} onChange={url => setState(f => ({ ...f, image_url: url }))} bucket="fanfiction-covers" />
         </div>
-        {field(state, setState, 'rank',          'RANK (1–500)',   { type: 'number', placeholder: '42' })}
         {field(state, setState, 'rating',        'NOTE',           { type: 'number', placeholder: '8.5' })}
         {field(state, setState, 'word_count',    'NOMBRE DE MOTS', { type: 'number', placeholder: '94300' })}
         {field(state, setState, 'chapter_count', 'CHAPITRES',      { type: 'number', placeholder: '22' })}
@@ -138,6 +132,36 @@ function FicForm({ state, setState, onSubmit, status, submitLabel, tapeLabel, ta
             </button>
           )}
         </div>
+        {/* Médaille (podium) */}
+        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>MÉDAILLE</div>
+          {[['gold','🥇 Or'], ['silver','🥈 Argent'], ['bronze','🥉 Bronze']].map(([val, lbl]) => (
+            <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 18 }}>
+              <input type="radio" name="medal" checked={state.medal === val}
+                onChange={() => setState(f => ({ ...f, medal: f.medal === val ? '' : val }))}
+                onClick={() => state.medal === val && setState(f => ({ ...f, medal: '' }))}
+                style={{ width: 15, height: 15, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
+              {lbl}
+            </label>
+          ))}
+        </div>
+
+        {/* Rôle — visible uniquement si contenu sexuel */}
+        {(state.content_rating === 'vanilla' || state.content_rating === 'explicit') && (
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>RÔLE</div>
+            {[['top','▲ Top'], ['bottom','▼ Bottom'], ['switch','⇅ Switch']].map(([val, lbl]) => (
+              <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 18 }}>
+                <input type="radio" name="role" checked={state.role === val}
+                  onChange={() => setState(f => ({ ...f, role: f.role === val ? '' : val }))}
+                  onClick={() => state.role === val && setState(f => ({ ...f, role: '' }))}
+                  style={{ width: 15, height: 15, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
+                {lbl}
+              </label>
+            ))}
+          </div>
+        )}
+
         {field(state, setState, 'summary',   'RESUME',     { full: true, textarea: true, placeholder: 'resume de la fic…' })}
         {field(state, setState, 'my_review', 'MA REVIEW',  { full: true, textarea: true, placeholder: 'mes impressions…', dotted: true })}
       </div>
@@ -158,10 +182,13 @@ export default function AdminPage() {
   const [userId,       setUserId]       = useState(null)
   const [fics,         setFics]         = useState([])
 
-  // Citations
-  const [quotes,       setQuotes]       = useState([])
-  const [newQuote,     setNewQuote]     = useState({ text: '', author: '' })
-  const [quoteStatus,  setQuoteStatus]  = useState('idle')
+  // Filtres
+  const [filterSearch,  setFilterSearch]  = useState('')
+  const [filterRating,  setFilterRating]  = useState(null)  // 'no_sex'|'vanilla'|'explicit'|null
+  const [filterEnding,  setFilterEnding]  = useState(null)  // 'happy'|'bad'|'open'|null
+  const [filterMedal,   setFilterMedal]   = useState(null)  // 'gold'|'silver'|'bronze'|null
+  const [filterNoteMin, setFilterNoteMin] = useState('')
+  const [filterNoteMax, setFilterNoteMax] = useState('')
 
   // Edition
   const [editId,     setEditId]     = useState(null)
@@ -176,14 +203,12 @@ export default function AdminPage() {
 
       const [{ count }, { data: ficsData }] = await Promise.all([
         supabase.from('fanfictions').select('*', { count: 'exact', head: true }),
-        supabase.from('fanfictions').select('id,work_name,author_name,universe_name,ship_name,rank,rating,word_count,chapter_count,read_count,good_ending,bad_ending,link,image_url,summary,my_review,tags,content_rating').order('rank', { ascending: true, nullsFirst: false }),
+        supabase.from('fanfictions').select('id,work_name,author_name,universe_name,ship_name,rating,word_count,chapter_count,read_count,good_ending,bad_ending,link,image_url,summary,my_review,tags,content_rating,role,medal').order('rating', { ascending: false, nullsFirst: false }),
       ])
 
       setFicsTotal(count ?? 0)
       setFics(ficsData ?? [])
 
-      const { data: quotesData } = await supabase.from('quotes').select('*').order('id')
-      setQuotes(quotesData ?? [])
     }
     load()
   }, [])
@@ -191,7 +216,7 @@ export default function AdminPage() {
   async function refreshFics() {
     const [{ count }, { data: ficsData }] = await Promise.all([
       supabase.from('fanfictions').select('*', { count: 'exact', head: true }),
-      supabase.from('fanfictions').select('id,work_name,author_name,universe_name,ship_name,rank,rating,word_count,chapter_count,read_count,good_ending,bad_ending,link,image_url,summary,my_review,tags,content_rating').order('rank', { ascending: true, nullsFirst: false }),
+      supabase.from('fanfictions').select('id,work_name,author_name,universe_name,ship_name,rating,word_count,chapter_count,read_count,good_ending,bad_ending,link,image_url,summary,my_review,tags,content_rating,role,medal').order('rating', { ascending: false, nullsFirst: false }),
     ])
     setFicsTotal(count ?? 0)
     setFics(ficsData ?? [])
@@ -210,7 +235,6 @@ export default function AdminPage() {
       summary:       f.summary       ?? '',
       my_review:     f.my_review     ?? '',
       tags:          f.tags          ?? [],
-      rank:          f.rank != null  ? String(f.rank)   : '',
       rating:        f.rating != null ? String(f.rating) : '',
       word_count:    f.word_count    != null ? String(f.word_count)    : '',
       chapter_count: f.chapter_count != null ? String(f.chapter_count) : '',
@@ -218,8 +242,9 @@ export default function AdminPage() {
       good_ending:    f.good_ending    ?? false,
       bad_ending:     f.bad_ending     ?? false,
       content_rating: f.content_rating ?? '',
+      role:           f.role  ?? '',
+      medal:          f.medal ?? '',
     })
-    setShowFicForm(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -232,28 +257,6 @@ export default function AdminPage() {
     }
     setEditStatus(error ? 'error' : 'saved')
     setTimeout(() => setEditStatus('idle'), 2500)
-  }
-
-  // ── Citations ──
-  async function addQuote() {
-    if (!newQuote.text.trim()) return
-    setQuoteStatus('saving')
-    const { data, error } = await supabase.from('quotes').insert({
-      text: newQuote.text.trim(),
-      author: newQuote.author.trim() || null,
-    }).select().single()
-    if (!error) {
-      setQuotes(prev => [...prev, data])
-      setNewQuote({ text: '', author: '' })
-    }
-    setQuoteStatus(error ? 'error' : 'saved')
-    setTimeout(() => setQuoteStatus('idle'), 2500)
-  }
-
-  async function deleteQuote(id, preview) {
-    if (!confirm(`Supprimer "${preview}" ?`)) return
-    const { error } = await supabase.from('quotes').delete().eq('id', id)
-    if (!error) setQuotes(prev => prev.filter(q => q.id !== id))
   }
 
   // ── Suppression fic ──
@@ -302,32 +305,45 @@ export default function AdminPage() {
         )}
 
 
-
         {/* Liste des fics */}
+        {(() => {
+          const nMin = filterNoteMin !== '' ? parseFloat(filterNoteMin) : null
+          const nMax = filterNoteMax !== '' ? parseFloat(filterNoteMax) : null
+          const q = filterSearch.toLowerCase()
+          const filtered = fics.filter(f => {
+            if (q && !(f.work_name?.toLowerCase().includes(q) || f.author_name?.toLowerCase().includes(q) || f.universe_name?.toLowerCase().includes(q) || f.ship_name?.toLowerCase().includes(q))) return false
+            if (filterRating && f.content_rating !== filterRating) return false
+            if (filterEnding && ficEnding(f) !== filterEnding) return false
+            if (filterMedal && f.medal !== filterMedal) return false
+            if (nMin != null && (f.rating ?? -Infinity) < nMin) return false
+            if (nMax != null && (f.rating ?? Infinity) > nMax) return false
+            return true
+          })
+          return (
         <div style={{ marginBottom: 40 }}>
           <div className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'var(--ink-mute)', marginBottom: 16 }}>
-            MES FICS · {fics.length} entrees
+            MES FICS · {filtered.length}{filtered.length !== fics.length ? `/${fics.length}` : ''} entrees
           </div>
 
-          {fics.length === 0 ? (
-            <div className="handwriting" style={{ fontSize: 20, color: 'var(--ink-mute)', padding: '24px 0' }}>aucune fic enregistree…</div>
+          {filtered.length === 0 ? (
+            <div className="handwriting" style={{ fontSize: 20, color: 'var(--ink-mute)', padding: '24px 0' }}>{fics.length === 0 ? 'aucune fic enregistree…' : 'aucun résultat pour ces filtres…'}</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {/* En-tete colonne */}
-              <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 140px 100px 60px 60px 80px', gap: '0 12px', padding: '6px 12px', borderBottom: '1.5px solid rgba(29,26,22,.12)' }}>
-                {['RANK', 'TITRE / AUTEUR', 'FANDOM', 'SHIP', 'MOTS', 'NOTE', ''].map(h => (
+              <div style={{ display: 'grid', gridTemplateColumns: '32px 1fr 140px 100px 60px 60px 80px', gap: '0 12px', padding: '6px 12px', borderBottom: '1.5px solid rgba(29,26,22,.12)' }}>
+                {['🏅', 'TITRE / AUTEUR', 'FANDOM', 'SHIP', 'MOTS', 'NOTE', ''].map(h => (
                   <div key={h} className="mono" style={{ fontSize: 8, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>{h}</div>
                 ))}
               </div>
 
-              {fics.map((f, i) => {
+              {filtered.map((f, i) => {
                 const ending = ficEnding(f)
                 return (
                   <div
                     key={f.id}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '36px 1fr 140px 100px 60px 60px 80px',
+                      gridTemplateColumns: '32px 1fr 140px 100px 60px 60px 80px',
                       gap: '0 12px',
                       padding: '10px 12px',
                       background: editId === f.id ? 'rgba(182,187,121,.15)' : i % 2 === 0 ? 'transparent' : 'rgba(29,26,22,.025)',
@@ -336,9 +352,9 @@ export default function AdminPage() {
                       transition: 'background .15s',
                     }}
                   >
-                    {/* Rank */}
-                    <div className="serif" style={{ fontSize: 15, color: 'var(--primrose)' }}>
-                      {f.rank != null ? `#${f.rank}` : '—'}
+                    {/* Médaille */}
+                    <div style={{ fontSize: 17, lineHeight: 1 }}>
+                      {f.medal === 'gold' ? '🥇' : f.medal === 'silver' ? '🥈' : f.medal === 'bronze' ? '🥉' : ''}
                     </div>
 
                     {/* Titre + auteur */}
@@ -400,83 +416,8 @@ export default function AdminPage() {
             </div>
           )}
         </div>
-
-        {/* ── Citations ── */}
-        <div style={{ marginBottom: 40 }}>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'var(--ink-mute)', marginBottom: 20 }}>
-            CITATIONS · {quotes.length} entrée{quotes.length !== 1 ? 's' : ''}
-          </div>
-
-          {/* Formulaire ajout */}
-          <div className="card" style={{ padding: '24px 28px', position: 'relative', transform: 'rotate(-0.2deg)', marginBottom: 20 }}>
-            <Tape kind="dots" color="var(--lime)" rot={-2} style={{ top: -12, left: 44, fontSize: 10, padding: '3px 12px' }}>nouvelle citation</Tape>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16, marginTop: 10 }}>
-              <div>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>TEXTE</div>
-                <textarea
-                  value={newQuote.text}
-                  onChange={e => setNewQuote(q => ({ ...q, text: e.target.value }))}
-                  placeholder="La citation…"
-                  rows={3}
-                  style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1.4px solid var(--ink)', fontFamily: 'var(--f-hand)', fontSize: 18, color: 'var(--ink)', outline: 'none', resize: 'none', paddingBottom: 4 }}
-                />
-              </div>
-              <div>
-                <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>AUTEUR (optionnel)</div>
-                <input
-                  value={newQuote.author}
-                  onChange={e => setNewQuote(q => ({ ...q, author: e.target.value }))}
-                  placeholder="nom de l'auteur·rice…"
-                  style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1.4px dotted var(--ink)', fontFamily: 'var(--f-hand)', fontSize: 18, color: 'var(--ink)', outline: 'none', paddingBottom: 4 }}
-                />
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16, marginTop: 20 }}>
-              <span className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: quoteStatus === 'saved' ? 'var(--lime-d)' : quoteStatus === 'error' ? 'var(--primrose)' : 'transparent', transition: 'color .3s' }}>
-                {quoteStatus === 'saved' ? '✓ ajoutée' : quoteStatus === 'error' ? '✕ erreur' : '·'}
-              </span>
-              <button onClick={addQuote} className="btn-stamp" style={{ padding: '10px 22px', fontSize: 13 }}>
-                {quoteStatus === 'saving' ? '⟳ …' : 'ajouter ✦'}
-              </button>
-            </div>
-          </div>
-
-          {/* Liste des citations */}
-          {quotes.length === 0 ? (
-            <div className="handwriting" style={{ fontSize: 18, color: 'var(--ink-mute)', padding: '16px 0' }}>aucune citation pour l'instant…</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 60px', gap: '0 12px', padding: '6px 12px', borderBottom: '1.5px solid rgba(29,26,22,.12)' }}>
-                {['TEXTE', 'AUTEUR', ''].map(h => (
-                  <div key={h} className="mono" style={{ fontSize: 8, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>{h}</div>
-                ))}
-              </div>
-              {quotes.map((q, i) => (
-                <div key={q.id} style={{
-                  display: 'grid', gridTemplateColumns: '1fr 160px 60px', gap: '0 12px',
-                  padding: '10px 12px', alignItems: 'center',
-                  background: i % 2 === 0 ? 'transparent' : 'rgba(29,26,22,.025)',
-                  borderBottom: '1px dotted rgba(29,26,22,.08)',
-                }}>
-                  <div className="handwriting" style={{ fontSize: 16, color: 'var(--ink)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    «&nbsp;{q.text}&nbsp;»
-                  </div>
-                  <div className="mono" style={{ fontSize: 10, color: 'var(--ink-mute)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {q.author || '—'}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <button
-                      onClick={() => deleteQuote(q.id, q.text.slice(0, 30))}
-                      style={{ background: 'none', border: '1px solid rgba(29,26,22,.2)', borderRadius: 3, cursor: 'pointer', padding: '3px 8px', fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-mute)', transition: 'all .15s' }}
-                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--primrose)'; e.currentTarget.style.borderColor = 'var(--primrose)' }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.borderColor = 'rgba(29,26,22,.2)' }}
-                    >del</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+          )
+        })()}
 
         <div style={{ marginTop: 32, display: 'flex', justifyContent: 'flex-end' }}>
           <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.3em', color: 'var(--ink-mute)' }}>─ 05 / 05 ─</span>
