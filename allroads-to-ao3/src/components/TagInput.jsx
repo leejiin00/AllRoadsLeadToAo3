@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function TagInput({ value = [], onChange, placeholder = 'slow burn, angst / mutual pining…' }) {
+export default function TagInput({ value = [], onChange, placeholder = 'slow burn, angst / mutual pining…', onInputChange }) {
   const [input, setInput] = useState('')
 
   function commit(raw) {
@@ -8,12 +8,13 @@ export default function TagInput({ value = [], onChange, placeholder = 'slow bur
     if (!incoming.length) return
     onChange([...new Set([...value, ...incoming])])
     setInput('')
+    onInputChange?.('')
   }
 
   function handleChange(e) {
     const v = e.target.value
     if (/[,/\n\t]/.test(v)) commit(v)
-    else setInput(v)
+    else { setInput(v); onInputChange?.(v) }
   }
 
   function handleKeyDown(e) {
@@ -78,7 +79,7 @@ export default function TagInput({ value = [], onChange, placeholder = 'slow bur
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
-        onBlur={() => input.trim() && commit(input)}
+        onBlur={() => { if (input.trim()) commit(input) }}
         placeholder={value.length ? '' : placeholder}
         style={{
           flex: 1, minWidth: 120, background: 'transparent', border: 'none',

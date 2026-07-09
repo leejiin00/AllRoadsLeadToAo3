@@ -3,15 +3,17 @@ import { Page, Header, Sticky, Tape } from '../components/JournalShared'
 import { supabase } from '../lib/supabase'
 import { parseIntField, ficEnding, ENDING_LABEL, ENDING_COLOR } from '../lib/utils'
 import TagInput from '../components/TagInput'
+import ListSelect from '../components/ListSelect'
 import ImageUpload from '../components/ImageUpload'
-import { BloodDrop, StarMark, RatingIcon } from '../components/JournalShared'
+import { BloodDrop, StarMark, RatingIcon, RatingFlower, RatingPeach } from '../components/JournalShared'
+import buttImg from '../assets/butt.png'
 
 const EMPTY_FIC = {
   work_name: '', author_name: '', universe_name: '', ships: [], link: '', image_url: '',
   summary: '', my_review: '', tags: [],
   rating: '', word_count: '', chapter_count: '', read_count: '',
   good_ending: false, bad_ending: false,
-  content_rating: '', role: '', medal: '',
+  content_rating: '', top_char: [], bottom_char: [], is_switch: false, medal: '', completed: false,
 }
 
 function buildPayload(fic) {
@@ -26,8 +28,11 @@ function buildPayload(fic) {
     my_review:     fic.my_review.trim()     || null,
     tags:          fic.tags.length ? fic.tags : null,
     rating:        parseFloat(fic.rating)   || null,
-    role:          fic.role  || null,
+    top_char:      fic.top_char?.length   ? fic.top_char   : null,
+    bottom_char:   fic.bottom_char?.length ? fic.bottom_char : null,
+    is_switch:     fic.is_switch ?? false,
     medal:         fic.medal || null,
+    completed:     fic.completed ?? false,
     word_count:    parseIntField(fic.word_count),
     chapter_count: parseIntField(fic.chapter_count),
     read_count:    parseIntField(fic.read_count),
@@ -63,6 +68,9 @@ function field(state, setState, key, label, opts = {}) {
 }
 
 function FicForm({ state, setState, onSubmit, status, submitLabel, tapeLabel, tapeColor = 'var(--primrose)' }) {
+  const [shipInput, setShipInput] = useState('')
+  const shipInputTrimmed = shipInput.trim()
+  const shipIsNew = shipInputTrimmed.length > 0 && !state.ships.includes(shipInputTrimmed)
   return (
     <div className="card" style={{ padding: '28px 28px 22px', position: 'relative', transform: 'rotate(-0.2deg)', marginBottom: 28 }}>
       <Tape kind="dots" color={tapeColor} rot={-2} style={{ top: -12, left: 44, fontSize: 10, padding: '3px 12px' }}>{tapeLabel}</Tape>
@@ -72,7 +80,16 @@ function FicForm({ state, setState, onSubmit, status, submitLabel, tapeLabel, ta
         {field(state, setState, 'universe_name', 'UNIVERS',        { placeholder: 'JJK, ATLA, HP…' })}
         <div>
           <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>SHIP(S)</div>
-          <TagInput value={state.ships} onChange={ships => setState(f => ({ ...f, ships }))} placeholder="A/B, C/D…" />
+          <TagInput value={state.ships} onChange={ships => setState(f => ({ ...f, ships }))} placeholder="A/B, C/D…" onInputChange={setShipInput} />
+          {shipIsNew && (
+            <div style={{ marginTop: 5 }}>
+              <button type="button"
+                onClick={() => { setState(f => ({ ...f, ships: [...new Set([...f.ships, shipInputTrimmed])] })); setShipInput('') }}
+                style={{ background: 'var(--lime-d)', border: 'none', borderRadius: 2, padding: '1px 9px', fontFamily: 'var(--f-hand)', fontSize: 13, cursor: 'pointer', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10 }}>+</span> ajouter "{shipInputTrimmed}"
+              </button>
+            </div>
+          )}
         </div>
         {field(state, setState, 'link',          'LIEN AO3',       { placeholder: 'https://archiveofourown.org/…', mono: true })}
         <div style={{ gridColumn: '1 / -1' }}>
@@ -87,78 +104,90 @@ function FicForm({ state, setState, onSubmit, status, submitLabel, tapeLabel, ta
           <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>TAGS</div>
           <TagInput value={state.tags} onChange={tags => setState(f => ({ ...f, tags }))} />
         </div>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>ENDING</div>
-          {[
-            { val: 'happy', label: 'happy end ✿',  icon: null },
-            { val: 'bad',   label: 'bad end',       icon: <BloodDrop size={13} style={{ marginRight: 2 }} /> },
-            { val: 'open',  label: 'open end',      icon: <StarMark  size={13} style={{ marginRight: 2 }} /> },
-          ].map(({ val, label, icon }) => {
-            const current = state.good_ending && !state.bad_ending ? 'happy' : state.bad_ending && !state.good_ending ? 'bad' : 'open'
-            const active = current === val
-            return (
-              <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 18 }}>
-                <input type="radio" name="ending" checked={active}
-                  onChange={() => setState(f => ({
-                    ...f,
-                    good_ending: val === 'happy',
-                    bad_ending:  val === 'bad',
-                  }))}
-                  style={{ width: 15, height: 15, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
-                {icon}{label}
-              </label>
-            )
-          })}
-        </div>
-        {/* Classement de contenu */}
-        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>CONTENU</div>
-          {[
-            { val: 'no_sex',   label: 'No Sex',  icon: <RatingIcon kind="no_sex"   size={20} style={{ marginRight: 4 }} /> },
-            { val: 'vanilla',  label: 'Sex Vanilla',  icon: <RatingIcon kind="vanilla"  size={20} style={{ marginRight: 4 }} /> },
-            { val: 'explicit', label: 'Sex Hardcore',       icon: <RatingIcon kind="explicit" size={20} style={{ marginRight: 4 }} /> },
-          ].map(({ val, label, icon }) => (
-            <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 17 }}>
-              <input type="radio" name="content_rating" checked={state.content_rating === val}
-                onChange={() => setState(f => ({ ...f, content_rating: val }))}
-                style={{ width: 15, height: 15, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
-              {icon}{label}
-            </label>
-          ))}
-          {state.content_rating && (
-            <button type="button" onClick={() => setState(f => ({ ...f, content_rating: '' }))}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-mute)', padding: 0, marginLeft: 4 }}>
-              × effacer
-            </button>
-          )}
-        </div>
-        {/* Médaille (podium) */}
-        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>MÉDAILLE</div>
-          {[['gold','🥇 Or'], ['silver','🥈 Argent'], ['bronze','🥉 Bronze']].map(([val, lbl]) => (
-            <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 18 }}>
-              <input type="radio" name="medal" checked={state.medal === val}
-                onChange={() => setState(f => ({ ...f, medal: f.medal === val ? '' : val }))}
-                onClick={() => state.medal === val && setState(f => ({ ...f, medal: '' }))}
-                style={{ width: 15, height: 15, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
-              {lbl}
-            </label>
-          ))}
+        {/* ENDING · CONTENU · MÉDAILLE — 3 listes compactes côte à côte */}
+        <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+          <div>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>ENDING</div>
+            <ListSelect
+              value={state.good_ending && !state.bad_ending ? 'happy' : state.bad_ending && !state.good_ending ? 'bad' : 'open'}
+              onChange={val => setState(f => ({ ...f, good_ending: val === 'happy', bad_ending: val === 'bad' }))}
+              options={[
+                { value: 'happy', label: 'happy end ✿' },
+                { value: 'bad',   label: 'bad end',    icon: <BloodDrop size={16} /> },
+                { value: 'open',  label: 'open end',   icon: <StarMark  size={16} /> },
+              ]}
+            />
+          </div>
+          <div>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>CONTENU</div>
+            <ListSelect
+              value={state.content_rating || null}
+              onChange={val => setState(f => ({ ...f, content_rating: val ?? '' }))}
+              nullable
+              options={[
+                { value: 'no_sex',   label: 'No Sex',       icon: <RatingIcon kind="no_sex"   size={18} /> },
+                { value: 'vanilla',  label: 'Sex Vanilla',  icon: <RatingIcon kind="vanilla"  size={18} /> },
+                { value: 'explicit', label: 'Sex Hardcore', icon: <RatingIcon kind="explicit" size={18} /> },
+              ]}
+            />
+          </div>
+          <div>
+            <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>MÉDAILLE</div>
+            <ListSelect
+              value={state.medal || null}
+              onChange={val => setState(f => ({ ...f, medal: val ?? '' }))}
+              nullable
+              options={[
+                { value: 'gold',   label: '🥇 Or' },
+                { value: 'silver', label: '🥈 Argent' },
+                { value: 'bronze', label: '🥉 Bronze' },
+              ]}
+            />
+          </div>
         </div>
 
-        {/* Rôle — visible uniquement si contenu sexuel */}
+        {/* TERMINÉE switch */}
+        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>TERMINÉE</div>
+          <span className="handwriting" style={{ fontSize: 15, opacity: state.completed ? 0.4 : 1, transition: 'opacity .2s' }}>non</span>
+          <button type="button" onClick={() => setState(f => ({ ...f, completed: !f.completed }))}
+            style={{ position: 'relative', width: 40, height: 22, borderRadius: 11, background: state.completed ? 'var(--lime-d)' : 'rgba(29,26,22,.15)', border: 'none', cursor: 'pointer', transition: 'background .2s', flexShrink: 0 }}>
+            <div style={{ position: 'absolute', top: 4, left: state.completed ? 22 : 4, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
+          </button>
+          <span className="handwriting" style={{ fontSize: 15, color: 'var(--lime-d)', opacity: state.completed ? 1 : 0.4, transition: 'opacity .2s' }}>oui</span>
+        </div>
+
+        {/* Switch + Top/Bottom — visible uniquement si contenu sexuel */}
         {(state.content_rating === 'vanilla' || state.content_rating === 'explicit') && (
-          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>RÔLE</div>
-            {[['top','▲ Top'], ['bottom','▼ Bottom'], ['switch','⇅ Switch']].map(([val, lbl]) => (
-              <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 18 }}>
-                <input type="radio" name="role" checked={state.role === val}
-                  onChange={() => setState(f => ({ ...f, role: f.role === val ? '' : val }))}
-                  onClick={() => state.role === val && setState(f => ({ ...f, role: '' }))}
-                  style={{ width: 15, height: 15, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
-                {lbl}
-              </label>
-            ))}
+          <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', alignSelf: 'flex-start', userSelect: 'none' }}>
+              <div onClick={() => setState(f => ({ ...f, is_switch: !f.is_switch }))}
+                style={{
+                  width: 18, height: 18, borderRadius: 3, flexShrink: 0,
+                  border: '1.5px solid rgba(29,26,22,.35)',
+                  background: state.is_switch ? 'var(--ink)' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', transition: 'background .15s',
+                }}>
+                {state.is_switch && <span style={{ color: 'var(--paper)', fontSize: 12, lineHeight: 1, fontWeight: 700 }}>✓</span>}
+              </div>
+              <span className="handwriting" onClick={() => setState(f => ({ ...f, is_switch: !f.is_switch }))}
+                style={{ fontSize: 17, color: state.is_switch ? 'var(--ink)' : 'var(--ink-mute)', transition: 'color .15s' }}>
+                ⇅ Switch
+              </span>
+            </label>
+            {!state.is_switch && (
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 140px' }}>
+                  <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>▲ TOP</div>
+                  <TagInput value={state.top_char} onChange={chars => setState(f => ({ ...f, top_char: chars }))} placeholder="personnage(s)…" />
+                </div>
+                <div style={{ flex: '1 1 140px' }}>
+                  <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>▼ BOTTOM</div>
+                  <TagInput value={state.bottom_char} onChange={chars => setState(f => ({ ...f, bottom_char: chars }))} placeholder="personnage(s)…" />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -183,12 +212,20 @@ export default function AdminPage() {
   const [fics,         setFics]         = useState([])
 
   // Filtres
-  const [filterSearch,  setFilterSearch]  = useState('')
-  const [filterRating,  setFilterRating]  = useState(null)  // 'no_sex'|'vanilla'|'explicit'|null
-  const [filterEnding,  setFilterEnding]  = useState(null)  // 'happy'|'bad'|'open'|null
-  const [filterMedal,   setFilterMedal]   = useState(null)  // 'gold'|'silver'|'bronze'|null
-  const [filterNoteMin, setFilterNoteMin] = useState('')
-  const [filterNoteMax, setFilterNoteMax] = useState('')
+  const [filterSearch,     setFilterSearch]     = useState('')
+  const [filterRating,     setFilterRating]     = useState(null)
+  const [filterEnding,     setFilterEnding]     = useState(null)
+  const [filterMedal,      setFilterMedal]      = useState(null)
+  const [filterCompleted,  setFilterCompleted]  = useState(null)
+  const [filterNoteMin,    setFilterNoteMin]    = useState('')
+  const [filterNoteMax,    setFilterNoteMax]    = useState('')
+  const [filterUniverse,   setFilterUniverse]   = useState(null)
+  const [filterShip,       setFilterShip]       = useState(null)
+  const [filterTag,        setFilterTag]        = useState(null)
+  const [filterTopChar,    setFilterTopChar]    = useState(null)
+  const [filterBottomChar, setFilterBottomChar] = useState(null)
+  const [sortRating,       setSortRating]       = useState(null)
+  const [openFilter,       setOpenFilter]       = useState(null)
 
   // Edition
   const [editId,     setEditId]     = useState(null)
@@ -203,7 +240,7 @@ export default function AdminPage() {
 
       const [{ count }, { data: ficsData }] = await Promise.all([
         supabase.from('fanfictions').select('*', { count: 'exact', head: true }),
-        supabase.from('fanfictions').select('id,work_name,author_name,universe_name,ship_name,rating,word_count,chapter_count,read_count,good_ending,bad_ending,link,image_url,summary,my_review,tags,content_rating,role,medal').order('rating', { ascending: false, nullsFirst: false }),
+        supabase.from('fanfictions').select('id,work_name,author_name,universe_name,ship_name,rating,word_count,chapter_count,read_count,good_ending,bad_ending,link,image_url,summary,my_review,tags,content_rating,top_char,bottom_char,is_switch,medal,completed').order('rating', { ascending: false, nullsFirst: false }),
       ])
 
       setFicsTotal(count ?? 0)
@@ -216,7 +253,7 @@ export default function AdminPage() {
   async function refreshFics() {
     const [{ count }, { data: ficsData }] = await Promise.all([
       supabase.from('fanfictions').select('*', { count: 'exact', head: true }),
-      supabase.from('fanfictions').select('id,work_name,author_name,universe_name,ship_name,rating,word_count,chapter_count,read_count,good_ending,bad_ending,link,image_url,summary,my_review,tags,content_rating,role,medal').order('rating', { ascending: false, nullsFirst: false }),
+      supabase.from('fanfictions').select('id,work_name,author_name,universe_name,ship_name,rating,word_count,chapter_count,read_count,good_ending,bad_ending,link,image_url,summary,my_review,tags,content_rating,top_char,bottom_char,is_switch,medal,completed').order('rating', { ascending: false, nullsFirst: false }),
     ])
     setFicsTotal(count ?? 0)
     setFics(ficsData ?? [])
@@ -242,8 +279,11 @@ export default function AdminPage() {
       good_ending:    f.good_ending    ?? false,
       bad_ending:     f.bad_ending     ?? false,
       content_rating: f.content_rating ?? '',
-      role:           f.role  ?? '',
-      medal:          f.medal ?? '',
+      top_char:       Array.isArray(f.top_char)    ? f.top_char    : f.top_char    ? [f.top_char]    : [],
+      bottom_char:    Array.isArray(f.bottom_char) ? f.bottom_char : f.bottom_char ? [f.bottom_char] : [],
+      is_switch:      f.is_switch ?? false,
+      medal:          f.medal         ?? '',
+      completed:      f.completed     ?? false,
     })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -310,22 +350,277 @@ export default function AdminPage() {
           const nMin = filterNoteMin !== '' ? parseFloat(filterNoteMin) : null
           const nMax = filterNoteMax !== '' ? parseFloat(filterNoteMax) : null
           const q = filterSearch.toLowerCase()
+          const allUniverses   = [...new Set(fics.map(f => f.universe_name).filter(Boolean))].sort()
+          const universeFicScope = filterUniverse ? fics.filter(f => f.universe_name === filterUniverse) : fics
+          const allShips       = [...new Set(universeFicScope.map(f => f.ship_name).filter(Boolean))].sort()
+          const allTags        = [...new Set(fics.flatMap(f => f.tags ?? []))].sort()
+          const allTopChars    = [...new Set(universeFicScope.flatMap(f => Array.isArray(f.top_char)    ? f.top_char.filter(Boolean)    : f.top_char    ? [f.top_char]    : []))].sort()
+          const allBottomChars = [...new Set(universeFicScope.flatMap(f => Array.isArray(f.bottom_char) ? f.bottom_char.filter(Boolean) : f.bottom_char ? [f.bottom_char] : []))].sort()
           const filtered = fics.filter(f => {
             if (q && !(f.work_name?.toLowerCase().includes(q) || f.author_name?.toLowerCase().includes(q) || f.universe_name?.toLowerCase().includes(q) || f.ship_name?.toLowerCase().includes(q))) return false
+            if (filterUniverse && f.universe_name !== filterUniverse) return false
             if (filterRating && f.content_rating !== filterRating) return false
             if (filterEnding && ficEnding(f) !== filterEnding) return false
             if (filterMedal && f.medal !== filterMedal) return false
+            if (filterCompleted !== null && Boolean(f.completed) !== filterCompleted) return false
             if (nMin != null && (f.rating ?? -Infinity) < nMin) return false
             if (nMax != null && (f.rating ?? Infinity) > nMax) return false
+            if (filterShip && f.ship_name !== filterShip) return false
+            if (filterTag && !(f.tags ?? []).includes(filterTag)) return false
+            if (filterTopChar && !(Array.isArray(f.top_char) ? f.top_char.includes(filterTopChar) : f.top_char === filterTopChar)) return false
+            if (filterBottomChar && !(Array.isArray(f.bottom_char) ? f.bottom_char.includes(filterBottomChar) : f.bottom_char === filterBottomChar)) return false
             return true
           })
+          const displayFics = [...filtered].sort((a, b) => {
+            if (sortRating) {
+              const ar = a.rating ?? -Infinity, br = b.rating ?? -Infinity
+              if (ar !== br) return sortRating === 'asc' ? ar - br : br - ar
+            }
+            return 0
+          })
+          const anyActive = filterSearch || filterUniverse || filterRating || filterEnding || filterMedal || filterCompleted !== null || filterNoteMin !== '' || filterNoteMax !== '' || filterShip || filterTag || filterTopChar || filterBottomChar || sortRating
+          const moreActive = filterUniverse || filterEnding || filterMedal || filterCompleted !== null || filterNoteMin !== '' || filterNoteMax !== '' || filterShip || filterTag || filterTopChar || filterBottomChar || sortRating
           return (
         <div style={{ marginBottom: 40 }}>
-          <div className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'var(--ink-mute)', marginBottom: 16 }}>
-            MES FICS · {filtered.length}{filtered.length !== fics.length ? `/${fics.length}` : ''} entrees
+
+          {/* Barre de filtres */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+            {/* Recherche texte */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,250,240,.8)', border: '1.4px solid rgba(29,26,22,.12)', borderRadius: 4, padding: '5px 12px', flex: '1 1 200px', maxWidth: 320 }}>
+              <span className="mono" style={{ fontSize: 9, letterSpacing: '.18em', color: 'var(--ink-mute)', flexShrink: 0 }}>CHERCHER</span>
+              <input
+                value={filterSearch}
+                onChange={e => setFilterSearch(e.target.value)}
+                placeholder="titre, auteur, univers…"
+                style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontFamily: 'var(--f-hand)', fontSize: 16, color: 'var(--ink)' }}
+              />
+              {filterSearch && (
+                <button onClick={() => setFilterSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-mute)', padding: 0, fontSize: 14, lineHeight: 1 }}>×</button>
+              )}
+            </div>
+
+            {/* Rating circles — mêmes assets que GalleryPage */}
+            {[
+              { key: 'no_sex',   title: 'Pas de contenu sexuel', icon: (s) => <RatingFlower size={s} /> },
+              { key: 'vanilla',  title: 'Contenu vanilla',       icon: (s) => <RatingPeach  size={s} /> },
+              { key: 'explicit', title: 'Contenu explicite',      icon: (s) => <img src={buttImg} alt="explicit" style={{ width: s, height: s, objectFit: 'contain' }} /> },
+            ].map(r => (
+              <button key={r.key} title={r.title}
+                onClick={() => setFilterRating(p => p === r.key ? null : r.key)}
+                style={{
+                  width: 28, height: 28, borderRadius: '50%', padding: 3, flexShrink: 0,
+                  border: filterRating === r.key ? '2px solid var(--ink)' : '1.5px solid rgba(29,26,22,.2)',
+                  background: filterRating === r.key ? 'rgba(255,250,240,.98)' : 'rgba(255,250,240,.6)',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  opacity: filterRating && filterRating !== r.key ? 0.35 : 1,
+                  transition: 'all .15s', color: 'var(--ink)',
+                }}>
+                {r.icon(14)}
+              </button>
+            ))}
+
+            {/* Chips actifs */}
+            {filterEnding && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontFamily: 'var(--f-hand)', fontSize: 13, background: 'var(--ink)', color: 'var(--paper)', borderRadius: 2 }}>
+                {filterEnding === 'happy' ? 'happy end ✿' : filterEnding === 'bad' ? 'bad end' : 'open end'}
+                <button onClick={() => setFilterEnding(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--paper)', padding: 0, lineHeight: 1, fontSize: 14 }}>×</button>
+              </span>
+            )}
+            {filterMedal && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontFamily: 'var(--f-hand)', fontSize: 13, background: 'var(--ink)', color: 'var(--paper)', borderRadius: 2 }}>
+                {filterMedal === 'gold' ? '🥇' : filterMedal === 'silver' ? '🥈' : '🥉'}
+                <button onClick={() => setFilterMedal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--paper)', padding: 0, lineHeight: 1, fontSize: 14 }}>×</button>
+              </span>
+            )}
+            {filterCompleted !== null && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontFamily: 'var(--f-hand)', fontSize: 13, background: 'var(--ink)', color: 'var(--paper)', borderRadius: 2 }}>
+                {filterCompleted ? 'terminée' : 'en cours'}
+                <button onClick={() => setFilterCompleted(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--paper)', padding: 0, lineHeight: 1, fontSize: 14 }}>×</button>
+              </span>
+            )}
+            {filterUniverse && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontFamily: 'var(--f-hand)', fontSize: 13, background: 'var(--ink)', color: 'var(--paper)', borderRadius: 2 }}>
+                {filterUniverse}
+                <button onClick={() => { setFilterUniverse(null); setFilterShip(null) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--paper)', padding: 0, lineHeight: 1, fontSize: 14 }}>×</button>
+              </span>
+            )}
+            {filterShip && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontFamily: 'var(--f-hand)', fontSize: 13, background: 'var(--ink)', color: 'var(--paper)', borderRadius: 2 }}>
+                {filterShip}
+                <button onClick={() => setFilterShip(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--paper)', padding: 0, lineHeight: 1, fontSize: 14 }}>×</button>
+              </span>
+            )}
+            {filterTag && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontFamily: 'var(--f-hand)', fontSize: 13, background: 'var(--ink)', color: 'var(--paper)', borderRadius: 2 }}>
+                {filterTag}
+                <button onClick={() => setFilterTag(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--paper)', padding: 0, lineHeight: 1, fontSize: 14 }}>×</button>
+              </span>
+            )}
+            {filterTopChar && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontFamily: 'var(--f-hand)', fontSize: 13, background: 'var(--ink)', color: 'var(--paper)', borderRadius: 2 }}>
+                ▲ {filterTopChar}
+                <button onClick={() => setFilterTopChar(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--paper)', padding: 0, lineHeight: 1, fontSize: 14 }}>×</button>
+              </span>
+            )}
+            {filterBottomChar && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', fontFamily: 'var(--f-hand)', fontSize: 13, background: 'var(--ink)', color: 'var(--paper)', borderRadius: 2 }}>
+                ▼ {filterBottomChar}
+                <button onClick={() => setFilterBottomChar(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--paper)', padding: 0, lineHeight: 1, fontSize: 14 }}>×</button>
+              </span>
+            )}
+
+            {/* Bouton + */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setOpenFilter(p => p ? null : 'more')}
+                style={{
+                  width: 28, height: 28, borderRadius: '50%', border: 'none',
+                  background: moreActive ? 'var(--ink)' : 'rgba(255,250,240,.6)',
+                  color: moreActive ? 'var(--paper)' : 'var(--ink)',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: 'var(--f-mono)', fontSize: 16, lineHeight: 1, transition: 'all .15s',
+                  boxShadow: '0 0 0 1.5px rgba(29,26,22,.2)',
+                }}>
+                {openFilter === 'more' ? '−' : '+'}
+              </button>
+              {openFilter === 'more' && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 20,
+                  background: '#fffaf0', border: '1.4px solid rgba(29,26,22,.18)',
+                  borderRadius: 6, padding: '14px 16px', minWidth: 210,
+                  boxShadow: '0 8px 24px rgba(0,0,0,.13)',
+                  display: 'flex', flexDirection: 'column', gap: 14,
+                }}>
+                  <div>
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>TERMINÉE</div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {[[true, 'oui ✓'], [false, 'non…']].map(([val, lbl]) => (
+                        <button key={String(val)} onClick={() => setFilterCompleted(p => p === val ? null : val)}
+                          style={{ flex: 1, padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13, background: filterCompleted === val ? 'var(--ink)' : 'transparent', color: filterCompleted === val ? 'var(--paper)' : 'var(--ink)', border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer', transition: 'all .12s' }}>{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>ENDING</div>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {[['happy', 'happy end ✿'], ['bad', 'bad end'], ['open', 'open end']].map(([val, lbl]) => (
+                        <button key={val} onClick={() => setFilterEnding(p => p === val ? null : val)}
+                          style={{ padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13, background: filterEnding === val ? 'var(--ink)' : 'transparent', color: filterEnding === val ? 'var(--paper)' : 'var(--ink)', border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer', transition: 'all .12s' }}>{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>MÉDAILLE</div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {[['gold','🥇'],['silver','🥈'],['bronze','🥉']].map(([val, lbl]) => (
+                        <button key={val} onClick={() => setFilterMedal(p => p === val ? null : val)}
+                          style={{ flex: 1, padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 14, background: filterMedal === val ? 'var(--ink)' : 'transparent', color: filterMedal === val ? 'var(--paper)' : 'var(--ink)', border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer', transition: 'all .12s' }}>{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>NOTE MIN — MAX</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input type="number" min={0} max={10} step={0.5} value={filterNoteMin} placeholder="0"
+                        onChange={e => setFilterNoteMin(e.target.value)}
+                        style={{ width: 48, background: 'transparent', border: 'none', borderBottom: '1.2px solid var(--ink)', fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink)', outline: 'none', textAlign: 'center', padding: '2px 0' }} />
+                      <span className="mono" style={{ fontSize: 10, color: 'var(--ink-mute)' }}>—</span>
+                      <input type="number" min={0} max={10} step={0.5} value={filterNoteMax} placeholder="10"
+                        onChange={e => setFilterNoteMax(e.target.value)}
+                        style={{ width: 48, background: 'transparent', border: 'none', borderBottom: '1.2px solid var(--ink)', fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink)', outline: 'none', textAlign: 'center', padding: '2px 0' }} />
+                    </div>
+                  </div>
+                  {allUniverses.length > 0 && (
+                    <div>
+                      <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>UNIVERS</div>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxHeight: 110, overflowY: 'auto' }}>
+                        {allUniverses.map(u => (
+                          <button key={u} onClick={() => { setFilterUniverse(p => p === u ? null : u); setFilterShip(null) }}
+                            style={{ padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13, background: filterUniverse === u ? 'var(--ink)' : 'transparent', color: filterUniverse === u ? 'var(--paper)' : 'var(--ink)', border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer', transition: 'all .12s' }}>{u}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {allShips.length > 0 && (
+                    <div>
+                      <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>SHIP</div>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxHeight: 110, overflowY: 'auto' }}>
+                        {allShips.map(s => (
+                          <button key={s} onClick={() => setFilterShip(p => p === s ? null : s)}
+                            style={{ padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13, background: filterShip === s ? 'var(--ink)' : 'transparent', color: filterShip === s ? 'var(--paper)' : 'var(--ink)', border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer', transition: 'all .12s' }}>{s}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {allTags.length > 0 && (
+                    <div>
+                      <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>TAG</div>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxHeight: 90, overflowY: 'auto' }}>
+                        {allTags.map(t => (
+                          <button key={t} onClick={() => setFilterTag(p => p === t ? null : t)}
+                            style={{ padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13, background: filterTag === t ? 'var(--ink)' : 'transparent', color: filterTag === t ? 'var(--paper)' : 'var(--ink)', border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer', transition: 'all .12s' }}>{t}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {(filterRating === 'vanilla' || filterRating === 'explicit') && (allTopChars.length > 0 || allBottomChars.length > 0) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {allTopChars.length > 0 && (
+                        <div>
+                          <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>▲ TOP</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {allTopChars.map(char => (
+                              <button key={char} onClick={() => setFilterTopChar(p => p === char ? null : char)}
+                                style={{ padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13, background: filterTopChar === char ? 'var(--ink)' : 'transparent', color: filterTopChar === char ? 'var(--paper)' : 'var(--ink)', border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer', transition: 'all .12s' }}>{char}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {allBottomChars.length > 0 && (
+                        <div>
+                          <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>▼ BOTTOM</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {allBottomChars.map(char => (
+                              <button key={char} onClick={() => setFilterBottomChar(p => p === char ? null : char)}
+                                style={{ padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13, background: filterBottomChar === char ? 'var(--ink)' : 'transparent', color: filterBottomChar === char ? 'var(--paper)' : 'var(--ink)', border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer', transition: 'all .12s' }}>{char}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div>
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>TRI PAR NOTE</div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {[['asc', '↑ asc.'], ['desc', '↓ desc.']].map(([val, lbl]) => (
+                        <button key={val} onClick={() => setSortRating(p => p === val ? null : val)}
+                          style={{ flex: 1, padding: '3px 9px', fontFamily: 'var(--f-hand)', fontSize: 13, background: sortRating === val ? 'var(--ink)' : 'transparent', color: sortRating === val ? 'var(--paper)' : 'var(--ink)', border: '1.2px solid rgba(29,26,22,.25)', borderRadius: 3, cursor: 'pointer', transition: 'all .12s' }}>{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {moreActive && (
+                    <button onClick={() => { setFilterUniverse(null); setFilterEnding(null); setFilterMedal(null); setFilterCompleted(null); setFilterNoteMin(''); setFilterNoteMax(''); setFilterShip(null); setFilterTag(null); setFilterTopChar(null); setFilterBottomChar(null); setSortRating(null) }}
+                      style={{ fontFamily: 'var(--f-hand)', fontSize: 12, color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
+                      ✕ effacer
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {anyActive && (
+              <button onClick={() => { setFilterSearch(''); setFilterUniverse(null); setFilterRating(null); setFilterEnding(null); setFilterMedal(null); setFilterCompleted(null); setFilterNoteMin(''); setFilterNoteMax(''); setFilterShip(null); setFilterTag(null); setFilterTopChar(null); setFilterBottomChar(null); setSortRating(null); setOpenFilter(null) }}
+                style={{ fontFamily: 'var(--f-hand)', fontSize: 12, color: 'var(--ink-mute)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}>
+                ✕ tout effacer
+              </button>
+            )}
           </div>
 
-          {filtered.length === 0 ? (
+          <div className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'var(--ink-mute)', marginBottom: 16 }}>
+            MES FICS · {displayFics.length}{displayFics.length !== fics.length ? `/${fics.length}` : ''} entrees
+          </div>
+
+          {displayFics.length === 0 ? (
             <div className="handwriting" style={{ fontSize: 20, color: 'var(--ink-mute)', padding: '24px 0' }}>{fics.length === 0 ? 'aucune fic enregistree…' : 'aucun résultat pour ces filtres…'}</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -336,7 +631,7 @@ export default function AdminPage() {
                 ))}
               </div>
 
-              {filtered.map((f, i) => {
+              {displayFics.map((f, i) => {
                 const ending = ficEnding(f)
                 return (
                   <div

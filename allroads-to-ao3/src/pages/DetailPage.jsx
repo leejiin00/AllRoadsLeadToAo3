@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { Page, Header, Tape, Sticky, BloodDrop, StarMark, Chip, Sticker, RatingFlower, RatingPeach } from '../components/JournalShared'
+import { Page, Header, Tape, Sticky, BloodDrop, StarMark, Chip, Sticker, RatingFlower, RatingPeach, RatingIcon } from '../components/JournalShared'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { strHue, ficEnding, parseIntField, ENDING_LABEL, ENDING_COLOR, MEDAL_ICON, ROLE_LABEL } from '../lib/utils'
+import { strHue, ficEnding, parseIntField, ENDING_LABEL, ENDING_COLOR, MEDAL_ICON } from '../lib/utils'
 import TagInput from '../components/TagInput'
+import ListSelect from '../components/ListSelect'
 import ImageUpload from '../components/ImageUpload'
 import buttImg from '../assets/butt.png'
 
@@ -48,7 +49,7 @@ const EMPTY_EDIT = {
   link: '', image_url: '', summary: '', my_review: '', tags: [],
   rating: '', word_count: '', chapter_count: '', read_count: '',
   good_ending: false, bad_ending: false, content_rating: '',
-  top_char: '', bottom_char: '', medal: '', completed: false,
+  top_char: [], bottom_char: [], is_switch: false, medal: '', completed: false,
 }
 
 function buildPayload(fic) {
@@ -63,8 +64,9 @@ function buildPayload(fic) {
     my_review:     fic.my_review.trim()     || null,
     tags:          fic.tags.length ? fic.tags : null,
     rating:        parseFloat(String(fic.rating).replace(',', '.')) || null,
-    top_char:      fic.top_char?.trim()    || null,
-    bottom_char:   fic.bottom_char?.trim() || null,
+    top_char:      fic.top_char?.length   ? fic.top_char   : null,
+    bottom_char:   fic.bottom_char?.length ? fic.bottom_char : null,
+    is_switch:     fic.is_switch ?? false,
     medal:         fic.medal || null,
     word_count:    parseIntField(fic.word_count),
     chapter_count: parseIntField(fic.chapter_count),
@@ -86,6 +88,7 @@ export default function DetailPage() {
   const [showEdit,   setShowEdit]   = useState(false)
   const [editFic,    setEditFic]    = useState(EMPTY_EDIT)
   const [editStatus, setEditStatus] = useState('idle')
+  const [shipInput,  setShipInput]  = useState('')
 
   useEffect(() => {
     supabase.from('fanfictions').select('*').eq('id', id).single()
@@ -115,8 +118,9 @@ export default function DetailPage() {
       good_ending:   fic.good_ending   ?? false,
       bad_ending:    fic.bad_ending    ?? false,
       content_rating: fic.content_rating ?? '',
-      top_char:      fic.top_char     ?? '',
-      bottom_char:   fic.bottom_char  ?? '',
+      top_char:      Array.isArray(fic.top_char)    ? fic.top_char    : fic.top_char    ? [fic.top_char]    : [],
+      bottom_char:   Array.isArray(fic.bottom_char) ? fic.bottom_char : fic.bottom_char ? [fic.bottom_char] : [],
+      is_switch:     fic.is_switch ?? false,
       medal:         fic.medal        ?? '',
       completed:     fic.completed    ?? false,
     })
@@ -182,10 +186,22 @@ export default function DetailPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px 28px', marginTop: 12 }}>
                 {field(editFic, setEditFic, 'work_name',     'TITRE',          { placeholder: 'nom de la fic…' })}
                 {field(editFic, setEditFic, 'author_name',   'AUTEUR·RICE',    { placeholder: 'nom sur AO3…' })}
-                {field(editFic, setEditFic, 'universe_name', 'UNIVERS',        { placeholder: 'JJK, ATLA, HP…' })}
+                <div>
+                  <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>UNIVERS</div>
+                  <ListSelect combobox value={editFic.universe_name} onChange={val => setEditFic(f => ({ ...f, universe_name: val }))} placeholder="JJK, ATLA, HP…" options={[]} />
+                </div>
                 <div>
                   <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>SHIP(S)</div>
-                  <TagInput value={editFic.ships} onChange={ships => setEditFic(f => ({ ...f, ships }))} placeholder="A/B, C/D…" />
+                  <TagInput value={editFic.ships} onChange={ships => setEditFic(f => ({ ...f, ships }))} placeholder="A/B, C/D…" onInputChange={setShipInput} />
+                  {shipInput.trim() && !editFic.ships.includes(shipInput.trim()) && (
+                    <div style={{ marginTop: 5 }}>
+                      <button type="button"
+                        onClick={() => { setEditFic(f => ({ ...f, ships: [...new Set([...f.ships, shipInput.trim()])] })); setShipInput('') }}
+                        style={{ background: 'var(--lime-d)', border: 'none', borderRadius: 2, padding: '1px 9px', fontFamily: 'var(--f-hand)', fontSize: 13, cursor: 'pointer', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10 }}>+</span> ajouter "{shipInput.trim()}"
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {field(editFic, setEditFic, 'link', 'LIEN AO3', { placeholder: 'https://archiveofourown.org/…', mono: true })}
                 <div style={{ gridColumn: '1 / -1' }}>
@@ -200,51 +216,46 @@ export default function DetailPage() {
                   <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>TAGS</div>
                   <TagInput value={editFic.tags} onChange={tags => setEditFic(f => ({ ...f, tags }))} />
                 </div>
-                {/* Ending */}
-                <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>ENDING</div>
-                  {[['happy', 'happy end ✿', null], ['bad', 'bad end', <BloodDrop size={13} />], ['open', 'open end', <StarMark size={13} />]].map(([val, lbl, icon]) => {
-                    const cur = editFic.good_ending && !editFic.bad_ending ? 'happy' : editFic.bad_ending && !editFic.good_ending ? 'bad' : 'open'
-                    return (
-                      <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 18 }}>
-                        <input type="radio" name="edit_ending" checked={cur === val}
-                          onChange={() => setEditFic(f => ({ ...f, good_ending: val === 'happy', bad_ending: val === 'bad' }))}
-                          style={{ width: 15, height: 15, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
-                        {icon && <span style={{ marginRight: 2 }}>{icon}</span>}{lbl}
-                      </label>
-                    )
-                  })}
-                </div>
-                {/* Contenu */}
-                <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>CONTENU</div>
-                  {[['no_sex','No Sex'], ['vanilla','Sex Vanilla'], ['explicit','Sex Hardcore']].map(([val, lbl]) => (
-                    <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 17 }}>
-                      <input type="radio" name="edit_content" checked={editFic.content_rating === val}
-                        onChange={() => setEditFic(f => ({ ...f, content_rating: val }))}
-                        style={{ width: 15, height: 15, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
-                      {lbl}
-                    </label>
-                  ))}
-                  {editFic.content_rating && (
-                    <button type="button" onClick={() => setEditFic(f => ({ ...f, content_rating: '' }))}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-mute)', padding: 0 }}>
-                      × effacer
-                    </button>
-                  )}
-                </div>
-                {/* Médaille */}
-                <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)' }}>MÉDAILLE</div>
-                  {[['gold','🥇 Or'],['silver','🥈 Argent'],['bronze','🥉 Bronze']].map(([val, lbl]) => (
-                    <label key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'var(--f-hand)', fontSize: 18 }}>
-                      <input type="radio" name="edit_medal" checked={editFic.medal === val}
-                        onChange={() => setEditFic(f => ({ ...f, medal: f.medal === val ? '' : val }))}
-                        onClick={() => editFic.medal === val && setEditFic(f => ({ ...f, medal: '' }))}
-                        style={{ width: 15, height: 15, accentColor: 'var(--primrose)', cursor: 'pointer' }} />
-                      {lbl}
-                    </label>
-                  ))}
+                {/* ENDING · CONTENU · MÉDAILLE — 3 listes compactes côte à côte */}
+                <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                  <div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>ENDING</div>
+                    <ListSelect
+                      value={editFic.good_ending && !editFic.bad_ending ? 'happy' : editFic.bad_ending && !editFic.good_ending ? 'bad' : 'open'}
+                      onChange={val => setEditFic(f => ({ ...f, good_ending: val === 'happy', bad_ending: val === 'bad' }))}
+                      options={[
+                        { value: 'happy', label: 'happy end ✿' },
+                        { value: 'bad',   label: 'bad end',    icon: <BloodDrop size={16} /> },
+                        { value: 'open',  label: 'open end',   icon: <StarMark  size={16} /> },
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>CONTENU</div>
+                    <ListSelect
+                      value={editFic.content_rating || null}
+                      onChange={val => setEditFic(f => ({ ...f, content_rating: val ?? '' }))}
+                      nullable
+                      options={[
+                        { value: 'no_sex',   label: 'No Sex',       icon: <RatingIcon kind="no_sex"   size={18} /> },
+                        { value: 'vanilla',  label: 'Sex Vanilla',  icon: <RatingIcon kind="vanilla"  size={18} /> },
+                        { value: 'explicit', label: 'Sex Hardcore', icon: <RatingIcon kind="explicit" size={18} /> },
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 6 }}>MÉDAILLE</div>
+                    <ListSelect
+                      value={editFic.medal || null}
+                      onChange={val => setEditFic(f => ({ ...f, medal: val ?? '' }))}
+                      nullable
+                      options={[
+                        { value: 'gold',   label: '🥇 Or' },
+                        { value: 'silver', label: '🥈 Argent' },
+                        { value: 'bronze', label: '🥉 Bronze' },
+                      ]}
+                    />
+                  </div>
                 </div>
                 {/* Terminée */}
                 <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -267,12 +278,38 @@ export default function DetailPage() {
                   <span className="handwriting" style={{ fontSize: 16, color: 'var(--lime-d)', opacity: editFic.completed ? 1 : 0.4, transition: 'opacity .2s' }}>oui</span>
                 </div>
 
-                {/* Top / Bottom — visible uniquement si contenu sexuel */}
+                {/* Switch + Top/Bottom — visible uniquement si contenu sexuel */}
                 {(editFic.content_rating === 'vanilla' || editFic.content_rating === 'explicit') && (
-                  <>
-                    {field(editFic, setEditFic, 'top_char',    '▲ TOP',    { placeholder: 'personnage top…' })}
-                    {field(editFic, setEditFic, 'bottom_char', '▼ BOTTOM', { placeholder: 'personnage bottom…' })}
-                  </>
+                  <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', alignSelf: 'flex-start', userSelect: 'none' }}>
+                      <div onClick={() => setEditFic(f => ({ ...f, is_switch: !f.is_switch }))}
+                        style={{
+                          width: 18, height: 18, borderRadius: 3, flexShrink: 0,
+                          border: '1.5px solid rgba(29,26,22,.35)',
+                          background: editFic.is_switch ? 'var(--ink)' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer', transition: 'background .15s',
+                        }}>
+                        {editFic.is_switch && <span style={{ color: 'var(--paper)', fontSize: 12, lineHeight: 1, fontWeight: 700 }}>✓</span>}
+                      </div>
+                      <span className="handwriting" onClick={() => setEditFic(f => ({ ...f, is_switch: !f.is_switch }))}
+                        style={{ fontSize: 17, color: editFic.is_switch ? 'var(--ink)' : 'var(--ink-mute)', transition: 'color .15s' }}>
+                        ⇅ Switch
+                      </span>
+                    </label>
+                    {!editFic.is_switch && (
+                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        <div style={{ flex: '1 1 140px' }}>
+                          <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>▲ TOP</div>
+                          <TagInput value={editFic.top_char} onChange={chars => setEditFic(f => ({ ...f, top_char: chars }))} placeholder="personnage(s)…" />
+                        </div>
+                        <div style={{ flex: '1 1 140px' }}>
+                          <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 5 }}>▼ BOTTOM</div>
+                          <TagInput value={editFic.bottom_char} onChange={chars => setEditFic(f => ({ ...f, bottom_char: chars }))} placeholder="personnage(s)…" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
                 {field(editFic, setEditFic, 'summary',   'RÉSUMÉ',    { full: true, textarea: true, placeholder: 'résumé de la fic…' })}
                 {field(editFic, setEditFic, 'my_review', 'MA REVIEW', { full: true, textarea: true, placeholder: 'mes impressions…', dotted: true })}
@@ -350,16 +387,22 @@ export default function DetailPage() {
                     <div className="serif" style={{ fontSize: 20 }}>{fic.rating}/10</div>
                   </div>
                 )}
-                {fic.top_char && (
+                {fic.is_switch && (
                   <div>
-                    <div className="mono" style={{ fontSize: 8, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>▲ TOP</div>
-                    <div className="handwriting" style={{ fontSize: 18 }}>{fic.top_char}</div>
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>RÔLE</div>
+                    <div className="handwriting" style={{ fontSize: 18 }}>⇅ Switch</div>
                   </div>
                 )}
-                {fic.bottom_char && (
+                {!fic.is_switch && fic.top_char?.length > 0 && (
+                  <div>
+                    <div className="mono" style={{ fontSize: 8, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>▲ TOP</div>
+                    <div className="handwriting" style={{ fontSize: 18 }}>{fic.top_char.join(' & ')}</div>
+                  </div>
+                )}
+                {!fic.is_switch && fic.bottom_char?.length > 0 && (
                   <div>
                     <div className="mono" style={{ fontSize: 8, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>▼ BOTTOM</div>
-                    <div className="handwriting" style={{ fontSize: 18 }}>{fic.bottom_char}</div>
+                    <div className="handwriting" style={{ fontSize: 18 }}>{fic.bottom_char.join(' & ')}</div>
                   </div>
                 )}
               </div>

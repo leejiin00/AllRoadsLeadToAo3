@@ -35,28 +35,64 @@ const _STICKER_POOL = [
 
 // 8 zones [topMin%, topMax%, leftMin%, leftMax%] réparties sur toute la page
 const _ZONES = [
-  [2,  14, 2,  18],   // coin haut-gauche
-  [2,  14, 78, 92],   // coin haut-droite
-  [74, 86, 2,  18],   // coin bas-gauche
-  [74, 86, 76, 90],   // coin bas-droite
-  [2,  14, 42, 58],   // haut-centre
-  [38, 60, 2,  12],   // milieu-gauche
-  [38, 60, 84, 92],   // milieu-droite
-  [74, 86, 42, 58],   // bas-centre
+  [2,  13, 2,  16],   // coin haut-gauche
+  [2,  13, 80, 93],   // coin haut-droite
+  [76, 88, 2,  16],   // coin bas-gauche
+  [76, 88, 78, 91],   // coin bas-droite
+  [2,  13, 43, 57],   // haut-centre
+  [38, 58, 2,  11],   // milieu-gauche
+  [38, 58, 86, 94],   // milieu-droite
+  [76, 88, 43, 57],   // bas-centre
 ]
 
 function _rnd(a, b) { return a + Math.random() * (b - a) }
 
 function _makeStickers() {
   const pool = [..._STICKER_POOL].sort(() => Math.random() - .5)
-  return _ZONES.map((z, i) => ({
+
+  // Référence indicative pour la détection de collision (px)
+  const W = 1100, H = 920
+
+  const stickers = _ZONES.map((z, i) => ({
     img:     pool[i % pool.length],
     top:     _rnd(z[0], z[1]),
     left:    _rnd(z[2], z[3]),
     rot:     _rnd(-40, 40),
-    size:    Math.floor(_rnd(54, 90)),
+    size:    Math.floor(_rnd(54, 82)),
     opacity: _rnd(.48, .82),
+    _zone:   z,
   }))
+
+  // Détection de collision : écarter les stickers qui se chevauchent
+  // Répété 4 fois pour laisser converger les nudges
+  for (let iter = 0; iter < 4; iter++) {
+    for (let i = 0; i < stickers.length; i++) {
+      for (let j = i + 1; j < stickers.length; j++) {
+        const a = stickers[i], b = stickers[j]
+        // Position centrale en px
+        const ax = (a.left / 100) * W + a.size / 2
+        const ay = (a.top  / 100) * H + a.size / 2
+        const bx = (b.left / 100) * W + b.size / 2
+        const by = (b.top  / 100) * H + b.size / 2
+        const dx = bx - ax, dy = by - ay
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const minDist = (a.size + b.size) / 2 + 20 // 20px de marge
+
+        if (dist > 0 && dist < minDist) {
+          // Nudger chaque sticker à 50% du chevauchement
+          const overlap = (minDist - dist) / 2
+          const nx = dx / dist, ny = dy / dist
+          const [az, bz] = [a._zone, b._zone]
+          a.left = Math.max(az[2], Math.min(az[3], a.left - (overlap * nx / W) * 100))
+          a.top  = Math.max(az[0], Math.min(az[1], a.top  - (overlap * ny / H) * 100))
+          b.left = Math.max(bz[2], Math.min(bz[3], b.left + (overlap * nx / W) * 100))
+          b.top  = Math.max(bz[0], Math.min(bz[1], b.top  + (overlap * ny / H) * 100))
+        }
+      }
+    }
+  }
+
+  return stickers
 }
 
 export const Tape = ({ children, style, kind = '', color, rot = -3 }) => (

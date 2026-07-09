@@ -40,6 +40,7 @@ export default function HomePage() {
   })
   const [recentFics, setRecentFics] = useState([])
   const [toReadList, setToReadList] = useState([])
+  const [podiumFics, setPodiumFics] = useState([])
   const [loadingStats, setLoadingStats] = useState(true)
 
   useEffect(() => {
@@ -54,15 +55,18 @@ export default function HomePage() {
         { data: wordsData },
         { data: lastFicData },
         { data: bmData, count: bmCount },
+        { data: topRatedData },
       ] = await Promise.all([
         supabase.from('fanfictions').select('*', { count: 'exact', head: true }),
         supabase.from('fanfictions').select('universe_name'),
         supabase.from('fanfictions').select('word_count').gte('created_at', monthStart),
         supabase.from('fanfictions').select('id,work_name,universe_name,image_url,ship_name,medal').order('created_at', { ascending: false }).limit(3),
         supabase.from('bookmarks').select('id,title,url,image,tag', { count: 'exact' }).order('created_at', { ascending: false }).limit(3),
+        supabase.from('fanfictions').select('id,work_name,universe_name,image_url,rating').not('rating', 'is', null).order('rating', { ascending: false }).limit(3),
       ])
 
       setToReadList(bmData ?? [])
+      setPodiumFics(topRatedData ?? [])
       setStats(s => ({ ...s, bookmarked: bmCount ?? 0 }))
 
       setRecentFics(lastFicData ?? [])
@@ -130,26 +134,26 @@ export default function HomePage() {
             <Doodle kind="heart" size={18} color="#F297A0" style={{ position: 'absolute', top: 8, right: -28 }} />
           </div>
 
-          <div style={{ marginTop: 12, fontFamily: 'var(--f-body)', fontSize: 16, fontStyle: 'italic', color: 'var(--ink-soft)', maxWidth: 480 }}>
+          <div style={{ marginTop: 12, fontFamily: 'var(--f-body)', fontSize: 16, fontStyle: 'italic', color: 'var(--ink-soft)', maxWidth: 510 }}>
             ton journal de lecture de fanfictions — chaque fic lue, notee et annotee, ta wishlist, tes propres ecrits.
           </div>
 
-          <WaveDivider width={320} style={{ marginTop: 20, marginBottom: 4 }} />
+          <WaveDivider width={510} style={{ marginTop: 20, marginBottom: 4 }} />
 
-          <div className="swatch-row" style={{ marginTop: 12, width: 'min(340px, 100%)' }}>
+          <div className="swatch-row" style={{ marginTop: 12, width: 'min(510px, 100%)' }}>
             <div className="row" style={{ ['--rc']: 'var(--pinktone)' }}><span>FICS LUES</span><span>·</span><span className="num">{loadingStats ? '…' : stats.ficsRead}</span></div>
             <div className="row" style={{ ['--rc']: 'var(--primrose)' }}><span>MARQUE-PAGES</span><span>·</span><span className="num">{loadingStats ? '…' : stats.bookmarked}</span></div>
             <div className="row" style={{ ['--rc']: 'var(--yucca)' }}><span>ÉCRITS</span><span>·</span><span className="num">{stats.writingsCount}</span></div>
           </div>
 
           <div style={{ marginTop: 24, display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <Sticky bg="var(--pinktone)" rot={-4} style={{ width: 148, position: 'relative' }}>
+            <Sticky bg="var(--pinktone)" rot={-4} style={{ width: 200, position: 'relative' }}>
               <Doodle kind="cloud" size={14} style={{ position: 'absolute', top: 8, right: 10, opacity: .4 }} />
               <div className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>MOTS CE MOIS</div>
               <div className="serif" style={{ fontSize: 34, marginTop: 4 }}>{formatWords(stats.wordsMonth)}</div>
               <div style={{ fontSize: 13 }}>{novelsEquiv(stats.wordsMonth)}</div>
             </Sticky>
-            <Sticky bg="#fffaf0" rot={-2} style={{ width: 172, border: '1.5px dashed var(--ink)', position: 'relative' }}>
+            <Sticky bg="#fffaf0" rot={-2} style={{ width: 210, border: '1.5px dashed var(--ink)', position: 'relative' }}>
               <Doodle kind="leaf" size={14} style={{ position: 'absolute', top: 8, right: 10, opacity: .35 }} />
               <div className="mono" style={{ fontSize: 9, letterSpacing: '.2em', color: 'var(--ink-mute)' }}>TOP FANDOM</div>
               <div className="serif" style={{ fontSize: 20, marginTop: 4 }}>{stats.topFandom}</div>
@@ -159,12 +163,45 @@ export default function HomePage() {
             </Sticky>
           </div>
 
-          <WaveDivider width={260} style={{ marginTop: 20, marginBottom: 16, opacity: .7 }} />
+          <WaveDivider width={510} style={{ marginTop: 20, marginBottom: 16, opacity: .7 }} />
 
           <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
             <Link to="/gallery" className="btn-stamp">explorer la bibliothèque →</Link>
             <Link to="/gallery" className="btn-stamp btn-stamp--ghost">ajouter une fic +</Link>
           </div>
+
+          {/* Podium — top 3 par note */}
+          {podiumFics.length > 0 && (
+            <>
+              <WaveDivider width={510} style={{ marginTop: 22, marginBottom: 14, opacity: .7 }} />
+              <div className="mono" style={{ fontSize: 9, letterSpacing: '.22em', color: 'var(--ink-mute)', marginBottom: 14 }}>PODIUM · TOP NOTÉES</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, maxWidth: 510 }}>
+                {[podiumFics[1], podiumFics[0], podiumFics[2]].map((fic, i) => {
+                  const medal   = ['🥈', '🥇', '🥉'][i]
+                  const barH    = [140, 190, 108][i]
+                  if (!fic) return <div key={i} style={{ flex: 1 }} />
+                  const bg = fic.image_url
+                    ? { backgroundImage: `url(${fic.image_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                    : { background: `linear-gradient(160deg, hsl(${strHue(fic.universe_name)},50%,78%), hsl(${(strHue(fic.universe_name) + 40) % 360},46%,56%))` }
+                  return (
+                    <Link key={fic.id} to={`/fic/${fic.id}`} style={{ textDecoration: 'none', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <div style={{ fontSize: 18, marginBottom: 4 }}>{medal}</div>
+                      <div style={{ width: '100%', height: barH, ...bg, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: 5 }}>
+                        <div style={{ background: 'rgba(0,0,0,.4)', padding: '2px 5px' }}>
+                          <div className="handwriting" style={{ fontSize: 10, color: '#fff', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {fic.work_name}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mono" style={{ fontSize: 8, letterSpacing: '.1em', color: 'var(--ink-mute)', marginTop: 3 }}>
+                        {fic.rating}/10
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </div>
 
         {/* ── Colonne droite — layout collage ── */}
